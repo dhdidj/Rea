@@ -177,7 +177,10 @@ const registerScreenshot = (
       endpoint: z
         .string()
         .describe("Loopback CDP HTTP endpoint or browser WebSocket URL"),
-      targetId: z.string().describe("Target ID from list-browser-targets"),
+      targetId: z
+        .string()
+        .min(1)
+        .describe("Target ID from list-browser-targets"),
     }),
     options: z.object({
       ...browserScopeOptions,

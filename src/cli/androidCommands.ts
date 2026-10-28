@@ -21,6 +21,7 @@ import { parseAnalysisInput } from "../application/AnalysisInput.js";
 import { androidJniSelectionSchema } from "../domain/android/androidJniBindings.js";
 import { androidJniDeliverySchema } from "../domain/android/androidJniQuery.js";
 import { cliIntegerArgument } from "./options.js";
+import { absoluteLocalPathStringSchema } from "../domain/localPath.js";
 
 /** Expose the same explicit APK requests through one-shot CLI commands. */
 export const registerAndroidCommands = (
@@ -63,9 +64,11 @@ export const registerAndroidCommands = (
       }),
     );
   const path = z.string().describe("Local standalone APK path");
-  const className = z.string().describe("Exact fully qualified class name");
-  const mappingPath = z
+  const className = z
     .string()
+    .min(1)
+    .describe("Exact fully qualified class name");
+  const mappingPath = absoluteLocalPathStringSchema
     .optional()
     .describe(
       "Absolute local R8/ProGuard mapping.txt; names are annotated, never replaced",
@@ -223,7 +226,7 @@ export const registerAndroidCommands = (
     args: z.object({
       path,
       className,
-      methodName: z.string().describe("Exact declared method name"),
+      methodName: z.string().min(1).describe("Exact declared method name"),
     }),
     options: z.object({
       overloadIndex: cliIntegerArgument(0)

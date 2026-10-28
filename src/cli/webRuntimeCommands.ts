@@ -82,9 +82,11 @@ export const registerWebRuntimeCommands = (
       endpoint: z.string().describe("Existing loopback browser CDP endpoint"),
       targetId: z
         .string()
+        .min(1)
         .describe("Selected page target ID from list-browser-targets"),
       selector: z
         .string()
+        .min(1)
         .describe("Native CSS selector; inspect the first main-document match"),
     }),
     options: z.object({ ...browserScopeOptions }),

@@ -8,7 +8,7 @@ import type {
   TerminalCaptureRetention,
 } from "./ProcessCaptureLifecycle.js";
 import type { RenderedTerminalFrame } from "../../domain/process/processCapture.js";
-import { redactTerminalChunks } from "./ProcessSensitiveTerminalOutput.js";
+import { redactTerminalChunks, redactTerminalSerialization } from "./ProcessSensitiveTerminalOutput.js";
 
 interface ProcessTerminalObservation {
   readonly retention: TerminalCaptureRetention;
@@ -42,7 +42,7 @@ export const retainTerminalObservationFailure = (
 
 /** Finalize retained chunks once after sampling, for both completion and error cleanup. */
 export const createProcessTerminalFinalizer = (
-  renderer: Pick<TerminalRenderer, "frames" | "dispose">,
+  renderer: Pick<TerminalRenderer, "frames" | "dispose"> & Partial<Pick<TerminalRenderer, "redactRetainedFrames">>,
   retention: () => TerminalCaptureRetention,
   observations: ProcessCaptureObservationBuffer,
   sensitiveValues: readonly string[] = [],
@@ -67,7 +67,7 @@ export const createProcessTerminalFinalizer = (
 };
 
 const observeTerminal = async (
-  renderer: Pick<TerminalRenderer, "frames">,
+  renderer: Pick<TerminalRenderer, "frames"> & Partial<Pick<TerminalRenderer, "redactRetainedFrames">>,
   readRetention: () => TerminalCaptureRetention,
   observations: ProcessCaptureObservationBuffer,
   sensitiveValues: readonly string[],
@@ -82,10 +82,11 @@ const observeTerminal = async (
   try {
     const frames = await renderer.frames();
     const safeFrames = frames.map((frame) => {
-      const [state] = redactTerminalChunks([frame.serialized_state], sensitiveValues);
+      const state = redactTerminalSerialization(frame.serialized_state, sensitiveValues);
       const lines = redactTerminalChunks(frame.lines, sensitiveValues);
-      return { ...frame, serialized_state: state!, lines };
+      return { ...frame, serialized_state: state, lines };
     });
+    renderer.redactRetainedFrames?.(safeFrames);
     rendered = ok(safeFrames);
     observations.rendered_frames = {
       state: "available",

@@ -163,8 +163,8 @@ const pcapCommandCleanupError = (
       reason: cleanup.reason,
       previous_error: null,
       captured_output: {
-        stdout: capturedOutput.stdout,
-        stderr: capturedOutput.stderr,
+        stdout: redactPcapDiagnostic(capturedOutput.stdout, cleanup.capturedOutput.truncated),
+        stderr: redactPcapDiagnostic(capturedOutput.stderr, cleanup.capturedOutput.truncated),
         truncated: cleanup.capturedOutput.truncated,
       },
     },
@@ -185,8 +185,8 @@ const assertValidPcapCommandText = (
     `${stage} output is not valid UTF-8; retained text contains replacement characters.`,
     {
       capturedOutput: {
-        stdout: redactPcapDiagnostic(output.stdout, cleanup.capturedOutput.truncated),
-        stderr: redactPcapDiagnostic(output.stderr, cleanup.capturedOutput.truncated),
+        stdout: redactPcapDiagnostic(output.stdout, output.cleanup?.capturedOutput.truncated ?? false),
+        stderr: redactPcapDiagnostic(output.stderr, output.cleanup?.capturedOutput.truncated ?? false),
         truncated: output.cleanup?.capturedOutput.truncated ?? false,
       },
       diagnostics: {

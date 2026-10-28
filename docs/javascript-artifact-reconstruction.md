@@ -307,7 +307,14 @@ and caller selection remain available without implying applicable AST work.
 MCP returns a `partial_observation` retained reference after recording succeeds;
 open it with `inspect_analysis_view` on the same connection. If the SDK stopped
 waiting before receiving the reply, follow [MCP cancellation recovery](mcp-contracts.md#progress-and-cancellation)
-to find the record. CLI failure output contains the complete partial Evidence.
+to find the record. CLI failure output contains the complete partial Evidence by
+default. With `--evidence_output FILE`, authenticated partial Evidence is published
+to that new bundle while the original analysis error remains primary. With
+`--detail summary`, `details.partial_observation` becomes its linked summary and
+`details.evidence_bundle` reports the written path and byte count. If publication
+fails, the complete partial Evidence remains inline and
+`details.evidence_publication_error` reports the publication failure, including
+any committed receipt. Cancellation before publication creates no new file.
 Owned analyzer cleanup is verified before private files are released; uncertain
 cleanup retains ownership for retry and is reported separately.
 Typed cancellation or another primary interruption remains attached while

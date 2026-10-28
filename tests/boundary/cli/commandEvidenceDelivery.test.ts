@@ -12,7 +12,8 @@ import {
   evidenceSchema,
 } from "../../../src/domain/evidence.js";
 import { parseEvidenceBundle } from "../../../src/domain/evidenceBundle.js";
-import { ok } from "../../../src/domain/result.js";
+import { err, ok } from "../../../src/domain/result.js";
+import { publishCliAnalysisEvidence } from "../../../src/cli/analysisEvidenceDelivery.js";
 import { OwnedStagedOutput } from "../../../src/filesystem/OwnedStagedOutput.js";
 import { GdbSessionManager } from "../../../src/gdb/GdbSessionManager.js";
 import { TestReverseEngineeringService } from "../../support/reverseEngineeringService.js";
@@ -277,5 +278,125 @@ it.each(kinds)(
     expect(JSON.stringify(output)).not.toContain(destination);
     expect(output).toHaveProperty("details.partial_observation.raw_result");
     expect(await readdir(f.directory)).toEqual(["input.bin"]);
+  },
+);
+
+it.each(["exists", "cancelled", "raw", "tampered"] as const)(
+  "preserves the primary failure and partial facts when publication is %s",
+  async (condition) => {
+    const f = await fixture("gdb");
+    const destination = join(f.directory, "partial.json");
+    const signal = new AbortController();
+    if (condition === "exists") await writeFile(destination, "caller bytes");
+    if (condition === "cancelled") signal.abort();
+    const partial =
+      condition === "raw"
+        ? { observed: true }
+        : condition === "tampered"
+          ? { ...f.parent, evidence_id: "ev_" + "0".repeat(64) }
+          : f.parent;
+    const failure = {
+      code: "provider_timeout",
+      details: { timeout_ms: 1, partial_observation: partial },
+    };
+    const result = await publishCliAnalysisEvidence(err(failure), {
+      providerId: "gdb",
+      operation: "gdb_console",
+      signal: signal.signal,
+      detail: "summary",
+      evidenceOutput: destination,
+    });
+    expect(result).toMatchObject(failure);
+    if (condition === "exists") {
+      expect(await readFile(destination, "utf8")).toBe("caller bytes");
+      expect(result).toHaveProperty("details.evidence_publication_error.code");
+    } else expect(await readdir(f.directory)).toEqual(["input.bin"]);
+  },
+);
+
+it.each(["assertReadyForPublication", "close"] as const)(
+  "keeps analysis failure and publication facts when cancellation arrives at %s",
+  async (stage) => {
+    const f = await fixture("gdb");
+    const destination = join(f.directory, "partial.json");
+    const controller = new AbortController();
+    const original = OwnedStagedOutput.prototype[stage];
+    const seam = vi
+      .spyOn(OwnedStagedOutput.prototype, stage)
+      .mockImplementationOnce(async function (
+        this: OwnedStagedOutput,
+        ...args: Parameters<OwnedStagedOutput[typeof stage]>
+      ) {
+        await Reflect.apply(original, this, args);
+        controller.abort();
+      });
+    onTestFinished(() => seam.mockRestore());
+    const output = await publishCliAnalysisEvidence(
+      err({
+        code: "provider_timeout",
+        details: { partial_observation: f.parent },
+      }),
+      {
+        providerId: "gdb",
+        operation: "gdb_console",
+        signal: controller.signal,
+        detail: "summary",
+        evidenceOutput: destination,
+      },
+    );
+    expect(output).toMatchObject({
+      code: "provider_timeout",
+      details: {
+        partial_observation: { evidence_id: f.parent.evidence_id },
+        evidence_publication_error: { code: "cancelled" },
+      },
+    });
+    if (stage === "close") {
+      const serialized = await readFile(destination, "utf8");
+      expect(output).toHaveProperty(
+        "details.evidence_publication_error.details.diagnostics.evidence_bundle",
+        {
+          path: destination,
+          bytes: Buffer.byteLength(serialized),
+        },
+      );
+    } else expect(await readdir(f.directory)).toEqual(["input.bin"]);
+    expect(await readdir(f.directory)).not.toContainEqual(
+      expect.stringMatching(/^\.rea-write-/u),
+    );
+  },
+);
+
+it.each([false, true])(
+  "keeps explicit exclusions in partial publication (existing: %s)",
+  async (existing) => {
+    const f = await fixture("gdb");
+    const destination = join(f.directory, "partial.json");
+    if (existing) await writeFile(destination, "caller bytes");
+    const output = await publishCliAnalysisEvidence(
+      err({
+        code: "provider_timeout",
+        details: { partial_observation: f.parent },
+      }),
+      {
+        providerId: "gdb",
+        operation: "gdb_console",
+        signal: new AbortController().signal,
+        detail: "summary",
+        evidenceOutput: destination,
+        sensitiveValues: [f.directory],
+      },
+    );
+    expect(JSON.stringify(output)).not.toContain(f.directory);
+    expect(output).toMatchObject({ code: "provider_timeout" });
+    if (existing)
+      expect(await readFile(destination, "utf8")).toBe("caller bytes");
+    else {
+      expect(output).toHaveProperty(
+        "details.evidence_bundle.bytes",
+        Buffer.byteLength(await readFile(destination)),
+      );
+      expect(output).not.toHaveProperty("details.evidence_bundle.path");
+    }
   },
 );

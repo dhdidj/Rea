@@ -1128,7 +1128,12 @@ signal-derived status. This describes the current source routing; it is not a
 claim that every command or provider runtime has been independently exercised.
 
 Commands with `--evidence_output` select their delivered view, then publish the
-complete Evidence bundle atomically. Cancellation before publication leaves no
+complete Evidence bundle atomically. An analysis failure carrying authenticated
+partial Evidence can publish that Evidence too: the original error stays primary,
+`details.partial_observation` follows the requested detail, and
+`details.evidence_bundle` gives the receipt. Without an output path, the complete
+partial Evidence remains inline. A publication failure retains it inline and
+adds `details.evidence_publication_error` without replacing the analysis error. Cancellation before publication leaves no
 new file. A publication that has committed can win a later cancellation; the
 `cancelled` result then keeps the written path and byte count under
 `details.diagnostics.evidence_bundle`. If staging cleanup stays incomplete

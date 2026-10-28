@@ -169,12 +169,29 @@ export const publishCliAnalysisEvidence = async (
   input: CliEvidenceDelivery,
 ): Promise<JsonValue> => {
   const { operation, signal, detail, evidenceOutput } = input;
-  const projectFailure = (error: AnalysisError) =>
-    projectAnalysisError(
+  const failure =
+    result.ok || evidenceOutput === undefined || signal.aborted
+      ? undefined
+      : partialCliFailure(result.error);
+  const projectFailure = (error: AnalysisError): JsonValue => {
+    const projected = projectAnalysisError(
       redactExplicitFailure(error, input.sensitiveValues ?? []),
     );
-  if (!result.ok) return result.error;
-  const complete = parseEvidence(result.value);
+    if (failure === undefined) return projected;
+    // The original analysis failure remains primary. Do not duplicate its
+    // complete partial Evidence inside the publication failure's diagnostics.
+    const { partial_observation: _partial, ...details } =
+      projected.details ?? {};
+    return {
+      ...failure.error,
+      details: {
+        ...failure.details,
+        evidence_publication_error: { ...projected, details },
+      },
+    };
+  };
+  if (!result.ok && failure === undefined) return result.error;
+  const complete = result.ok ? parseEvidence(result.value) : failure!.evidence;
   const inputError = cliEvidenceDeliveryInputError(input);
   if (inputError !== undefined) {
     inputError.retainPartialObservation(complete);
@@ -215,19 +232,59 @@ export const publishCliAnalysisEvidence = async (
     signal,
   });
   if (!published.ok) return projectFailure(published.error);
+  const receipt = {
+    ...(input.sensitiveValues?.some(
+      (literal) =>
+        literal !== "" && published.value.evidenceBundle.path.includes(literal),
+    )
+      ? {}
+      : { path: published.value.evidenceBundle.path }),
+    bytes: published.value.evidenceBundle.bytes,
+  };
+  if (failure !== undefined)
+    return {
+      ...failure.error,
+      details: {
+        ...failure.details,
+        partial_observation: published.value.delivered,
+        evidence_bundle: receipt,
+      },
+    };
   return detail === "summary"
-    ? {
-        summary: published.value.delivered,
-        evidence_bundle: {
-          ...(input.sensitiveValues?.some(
-            (literal) =>
-              literal !== "" &&
-              published.value.evidenceBundle.path.includes(literal),
-          )
-            ? {}
-            : { path: published.value.evidenceBundle.path }),
-          bytes: published.value.evidenceBundle.bytes,
-        },
-      }
+    ? { summary: published.value.delivered, evidence_bundle: receipt }
     : published.value.delivered;
+};
+
+const isJsonRecord = (
+  value: JsonValue | undefined,
+): value is Record<string, JsonValue> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Admit only authenticated Evidence from the projected failure envelope. */
+const partialCliFailure = (
+  error: JsonValue,
+):
+  | {
+      readonly error: Record<string, JsonValue>;
+      readonly details: Record<string, JsonValue>;
+      readonly evidence: Evidence;
+    }
+  | undefined => {
+  if (
+    !isJsonRecord(error) ||
+    error.code === "cancelled" ||
+    !isJsonRecord(error.details)
+  )
+    return undefined;
+  try {
+    return {
+      error,
+      details: error.details,
+      evidence: parseEvidence(error.details.partial_observation),
+    };
+  } catch {
+    // Raw observations and invalid Evidence remain available in the original
+    // failure, but cannot become authenticated bundle records.
+    return undefined;
+  }
 };

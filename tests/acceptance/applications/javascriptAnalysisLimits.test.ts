@@ -67,6 +67,56 @@ cliTest(
   },
 );
 
+cliTest.for(["summary", "complete"] as const)(
+  "publishes partial timeout Evidence with $0 delivery",
+  async (detail, { cli }) => {
+    const root = await createTestTempDirectory("rea-js-timeout-output-");
+    const input = join(root, "main.js");
+    const destination = join(root, "partial.json");
+    await writeFile(input, "export const observed = 7;\n");
+    const response = await cli.run({
+      arguments: [
+        "analyze-javascript-application",
+        root,
+        "--max-heap-mb",
+        "128",
+        "--analysis-timeout-ms",
+        "1",
+        "--detail",
+        detail,
+        "--evidence_output",
+        destination,
+        "--json",
+      ],
+    });
+    expect(response.exitCode, response.stderr).toBe(1);
+    expect(response.json).toMatchObject({ code: "provider_timeout" });
+    const serialized = await readFile(destination, "utf8");
+    const bundle = parseEvidenceBundle(JSON.parse(serialized));
+    const complete = bundle.records.find(
+      (record) => record.operation === "analyze_javascript_application",
+    );
+    expect(complete).toBeDefined();
+    const output = z
+      .object({
+        details: z.object({
+          partial_observation: z.unknown(),
+          evidence_bundle: z.object({ path: z.string(), bytes: z.number() }),
+        }),
+      })
+      .parse(response.json);
+    expect(output.details.evidence_bundle).toEqual({
+      path: destination,
+      bytes: Buffer.byteLength(serialized),
+    });
+    const delivered = parseEvidence(output.details.partial_observation);
+    if (detail === "summary") {
+      expect(delivered.evidence_links).toContain(complete?.evidence_id);
+      expect(delivered.raw_result).toBeNull();
+    } else expect(delivered.evidence_id).toBe(complete?.evidence_id);
+  },
+);
+
 cliTest.for(cases)(
   "preserves $name in CLI Evidence without adding ambient defaults",
   async ({ args, controls }, { cli }) => {

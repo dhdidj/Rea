@@ -1490,19 +1490,26 @@ export const captureTerminalFrames = (options: {
       subscription.dispose();
     }
     const identifiers = options.identifiers();
-    if (
-      options.scenario.normalization.pids &&
-      firstIdentifiers !== undefined &&
-      identifiers !== firstIdentifiers
-    ) {
-      normalizedBytes = normalizeRetainedTerminalFrames(
+    try {
+      if (
+        options.scenario.normalization.pids &&
+        firstIdentifiers !== undefined &&
+        identifiers !== firstIdentifiers
+      ) {
+        normalizedBytes = normalizeRetainedTerminalFrames(
+          options.frames,
+          options.normalizeText,
+          options.scenario.limits.output_bytes,
+        );
+        firstIdentifiers = identifiers;
+      }
+    } finally {
+      // Partial observations also reference this array when finalization fails.
+      redactRetainedTerminalFrames(
         options.frames,
-        options.normalizeText,
-        options.scenario.limits.output_bytes,
+        sensitiveTerminalInputValues(options.scenario),
       );
-      firstIdentifiers = identifiers;
     }
-    redactRetainedTerminalFrames(options.frames, sensitiveTerminalInputValues(options.scenario));
     return {
       raw_terminal: {
         budget_bytes: options.scenario.limits.output_bytes,

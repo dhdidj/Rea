@@ -56,6 +56,73 @@ const put = async (root: string, path: string, bytes: Buffer | string) => {
   await writeFile(destination, bytes);
 };
 
+it("recognizes installed Unity, Godot and Unreal editor layouts", async () => {
+  const root = await createTestTempDirectory("rea-desktop-engine-editors-");
+  await put(root, "Editor/Unity.exe", "Unity editor path marker");
+  await put(root, "modules.json", "{}");
+  await put(root, "metadata.hub.json", "{}");
+  await put(
+    root,
+    "Editor/Data/Managed/UnityEngine.CoreModule.dll",
+    buildManagedPeFixture({ references: ["UnityEngine.CoreModule"] }),
+  );
+  await put(
+    root,
+    "godot.windows.opt.tools.64.exe",
+    "Godot tools editor path marker",
+  );
+  await put(
+    root,
+    "Engine/Binaries/Win64/UnrealEditor.exe",
+    "Unreal editor path marker",
+  );
+  await put(root, "Engine/Build/Build.version", "{}");
+  await put(root, "Engine/Plugins/Runtime/Example/Example.uplugin", "{}");
+
+  const { report } = await inspect(root);
+  expect(report.candidates.map(({ family }) => family)).toEqual(
+    expect.arrayContaining([
+      "unity-editor",
+      "unity-mono",
+      "godot-editor",
+      "unreal-editor",
+    ]),
+  );
+  expect(report.components).toContainEqual(
+    expect.objectContaining({
+      name: "Example",
+      category: "engine-plugin",
+      runtime_presence: "unknown",
+    }),
+  );
+  expect(
+    report.next_probes.filter(
+      ({ operation }) => operation === "inspect_pe_resources",
+    ),
+  ).toHaveLength(3);
+  expect(
+    report.files.find(({ path }) => path === "Engine/Build/Build.version")
+      ?.facts,
+  ).toContainEqual({
+    kind: "engine-installation-path-convention",
+    offset: null,
+    value: { engine: "unreal", role: "installation-manifest" },
+  });
+
+  const unrealBinaries = await inspect(join(root, "Engine/Binaries/Win64"));
+  expect(
+    unrealBinaries.report.candidates.map(({ family }) => family),
+  ).toContain("unreal-editor");
+  const unrealPlugins = await inspect(join(root, "Engine/Plugins"));
+  expect(unrealPlugins.report.components.map(({ name }) => name)).toContain(
+    "Example",
+  );
+  const unityManaged = await inspect(join(root, "Editor/Data/Managed"));
+  expect(unityManaged.report.candidates.map(({ family }) => family)).toContain(
+    "unity-mono",
+  );
+});
+
 it.each(["NE", "LE", "LX", "PE\0\0"])(
   "admits the MZ signature before interpreting a trailing %j header as PE",
   async (signature) => {
@@ -1019,6 +1086,7 @@ it.each([false, true])(
 it.each([
   "Game_Data/Managed",
   "Contents/Resources/Data/Managed",
+  "Editor/Data/Managed",
   "Nested/Game.app/Contents/Resources/Data/Managed",
 ])(
   "reads AssemblyRef names in %s independently of unrelated key/hash payload validity",

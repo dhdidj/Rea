@@ -288,7 +288,7 @@ const scanDirectory = async (
         continue;
       }
       if (entry.kind !== "file") continue;
-      const managedRoot = addPathFacts(row);
+      const managedRoot = addPathFacts(row, input.path);
       if (!probeSelected(entry)) continue;
       if (budget.bytes >= budget.maximum) {
         row.read_status = "unavailable";
@@ -451,8 +451,14 @@ const fileRow = (
   };
 };
 
-const addPathFacts = (row: DesktopFile): string | null => {
-  const conventions = desktopPathConventions(row.path);
+const addPathFacts = (row: DesktopFile, rootPath: string): string | null => {
+  const conventions = desktopPathConventions(row.path, rootPath);
+  if (conventions.engineInstallationMarker)
+    row.facts.push({
+      kind: "engine-installation-path-convention",
+      offset: null,
+      value: conventions.engineInstallationMarker,
+    });
   if (conventions.electronArchive)
     row.facts.push({
       kind: "electron-asar-convention",

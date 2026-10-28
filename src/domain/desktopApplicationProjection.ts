@@ -60,8 +60,48 @@ export const projectDesktopApplication = (
   candidate(
     "unity-mono",
     mono,
-    "Managed assemblies in a Unity Data/Managed layout reference UnityEngine assemblies.",
+    "Managed assemblies in a Unity Data/Managed or Editor/Data/Managed layout reference UnityEngine assemblies.",
   );
+  const editorMarker = (
+    file: DesktopFile,
+    engine: "unity" | "godot" | "unreal",
+  ) =>
+    file.facts.some(
+      (fact) =>
+        fact.kind === "engine-installation-path-convention" &&
+        fact.value.engine === engine &&
+        fact.value.role === "editor-executable",
+    );
+  candidate(
+    "unity-editor",
+    files.filter((file) => editorMarker(file, "unity")),
+    "The canonical Unity Editor executable path was observed; the editor build, enabled modules and runtime behavior remain unverified.",
+    "inferred",
+  );
+  candidate(
+    "godot-editor",
+    files.filter((file) => editorMarker(file, "godot")),
+    "A Godot tools-editor executable naming convention was observed; version, enabled editor plugins and runtime behavior remain unverified.",
+    "inferred",
+  );
+  candidate(
+    "unreal-editor",
+    files.filter((file) => editorMarker(file, "unreal")),
+    "The canonical Unreal Editor executable path was observed; build, enabled plugins and runtime behavior remain unverified.",
+    "inferred",
+  );
+  for (const file of files.filter(
+    (row) =>
+      /\.exe$/iu.test(row.path) &&
+      (editorMarker(row, "unity") ||
+        editorMarker(row, "godot") ||
+        editorMarker(row, "unreal")),
+  ))
+    probe(
+      "inspect_pe_resources",
+      file,
+      "Inspect this editor executable's bounded PE resource tree for static version and product metadata; resource payload meaning and runtime loading remain unverified.",
+    );
   const metadata = files.filter((file) => has(file, "il2cpp-metadata-header"));
   for (const file of metadata)
     if (
@@ -169,6 +209,31 @@ export const projectDesktopApplication = (
       name: marker.name,
       category: marker.category,
       basis_file_ids: basis.map((file) => file.file_id),
+      confidence: "inferred" as const,
+      runtime_presence: "unknown" as const,
+    };
+    components.push({
+      component_id: `dsm_${digestCanonicalValue(semantic, "Desktop component marker")}`,
+      ...semantic,
+    });
+  }
+  for (const file of files.filter((row) =>
+    row.facts.some(
+      (fact) =>
+        fact.kind === "engine-installation-path-convention" &&
+        fact.value.engine === "unreal" &&
+        fact.value.role === "plugin-descriptor",
+    ),
+  )) {
+    const name = file.path
+      .split("/")
+      .at(-1)
+      ?.replace(/\.uplugin$/iu, "");
+    if (!name) continue;
+    const semantic = {
+      name,
+      category: "engine-plugin" as const,
+      basis_file_ids: [file.file_id],
       confidence: "inferred" as const,
       runtime_presence: "unknown" as const,
     };

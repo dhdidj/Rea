@@ -8,9 +8,12 @@ import { artifactTraversalOmissionKindSchema } from "./artifactGraph.js";
 
 export const desktopFamilySchema = z.enum([
   "dotnet",
+  "unity-editor",
   "unity-mono",
   "unity-il2cpp",
+  "godot-editor",
   "unreal",
+  "unreal-editor",
   "godot",
   "gamemaker",
   "electron",
@@ -47,6 +50,18 @@ const desktopFactSchema = z.discriminatedUnion("kind", [
       managed_directory: z.string(),
     }),
   ),
+  z.strictObject({
+    kind: z.literal("engine-installation-path-convention"),
+    offset: z.null(),
+    value: z.strictObject({
+      engine: z.enum(["unity", "godot", "unreal"]),
+      role: z.enum([
+        "editor-executable",
+        "installation-manifest",
+        "plugin-descriptor",
+      ]),
+    }),
+  }),
   fact(
     "native-image-header",
     z.union([
@@ -153,7 +168,7 @@ export const desktopCandidateSchema = z.strictObject({
 export const desktopComponentSchema = z.strictObject({
   component_id: prefixedDigestSchema("dsm"),
   name: z.string(),
-  category: z.enum(["mod-loader", "protection"]),
+  category: z.enum(["mod-loader", "protection", "engine-plugin"]),
   basis_file_ids: z.array(prefixedDigestSchema("dsf")).min(1),
   confidence: z.literal("inferred"),
   runtime_presence: z.literal("unknown"),
@@ -163,6 +178,7 @@ export const desktopProbeSchema = z.strictObject({
   operation: z.enum([
     "inspect_managed_artifact",
     "inspect_il2cpp_metadata",
+    "inspect_pe_resources",
     "open_binary",
     "analyze_javascript_application",
   ]),

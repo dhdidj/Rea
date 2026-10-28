@@ -525,6 +525,31 @@ it("normalizes descendants of selected directories spelled with a trailing slash
   );
 });
 
+it("normalizes filesystem-root descendants without rewriting URL separators or HTML tags", () => {
+  const declared = processScenarioSchema.parse({
+    executable: "/program",
+    working_directory: "/elsewhere",
+    filesystem_observation_paths: ["/"],
+    normalization: { paths: true, pids: false, ports: false, patterns: [] },
+  });
+  const input = "/other/item http://example.test/path </div> /";
+  const expected =
+    "<filesystem-root-0>/other/item http://example.test/path </div> <filesystem-root-0>";
+  expect(normalizeProcessText(input, declared, "/private", rootPid)).toBe(
+    expected,
+  );
+  expect(
+    createBoundedProcessTextNormalizer(
+      declared,
+      "/private",
+      rootPid,
+    )(input, 1024),
+  ).toMatchObject({
+    state: "normalized",
+    value: expected,
+  });
+});
+
 it("treats path metacharacters literally while preferring nested observed roots", () => {
   const declared = processScenarioSchema.parse({
     executable: "/selected/[tool]+",

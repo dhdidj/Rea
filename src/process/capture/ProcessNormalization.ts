@@ -378,18 +378,22 @@ const createPathRule = (
   );
   if (paths.length === 0) return undefined;
   const pattern = paths
-    .map((path) => path.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+    .map((path) =>
+      path === "/"
+        ? "/(?!/)(?=([^\\s\"']?))"
+        : `${path.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?=$|/|[\\s"'])`,
+    )
     .join("|");
   // A selected path is an identity, not an arbitrary text prefix. Only match
   // it at a clear text delimiter; keep the parent-directory case (`/root` in
   // `/root/file`) while leaving punctuation-adjacent names untouched.
-  const matcher = new RegExp(
-    `(^|[\\s"'=:(\\[{<])(${pattern})(?=$|/|[\\s"'])`,
-    "gu",
-  );
+  const matcher = new RegExp(`(^|[\\s"'=:(\\[{<])(${pattern})`, "gu");
   return {
     matcher,
-    replace: (_match, prefix, path) => `${prefix}${aliases.get(path) ?? path}`,
+    replace: (match, prefix, path, rootChild) =>
+      path === "/" && prefix === "<"
+        ? match
+        : `${prefix}${aliases.get(path) ?? path}${path === "/" && rootChild ? "/" : ""}`,
   };
 };
 

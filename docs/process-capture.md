@@ -330,7 +330,9 @@ When path normalization is enabled, aliases apply to selected path identities
 at clear text delimiters. A selected executable path does not alias a longer
 sibling filename such as `tool-helper`; selected parent directories still
 normalize within descendant paths, including when the working directory or an
-observation path is spelled with a trailing `/` or `/.`. The comparison contract
+observation path is spelled with a trailing `/` or `/.`. A selected filesystem
+root `/` also aliases descendant paths, without rewriting URL separators or
+HTML closing tags. The comparison contract
 records these rules as `path-component-boundaries-v3`, so captures made with the
 earlier rules cannot be compared as if the text had the same meaning.
 

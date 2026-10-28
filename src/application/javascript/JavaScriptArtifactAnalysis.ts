@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import { posix } from "node:path";
 
 import { setImmediate } from "node:timers/promises";
+
+import type { JavaScriptPackageType } from "../../domain/javascript/javascriptSourceParser.js";
 
 import { resolveJavaScriptSourceMapReferences } from "../../domain/javascript/javascriptSourceMapPaths.js";
 import { hasValidSourceMapContents } from "../../domain/sourceMapContents.js";
@@ -82,6 +85,7 @@ export const analyzeAndAdoptJavaScriptArtifactFiles = async (
   readonly interruption: AnalysisError | null;
 }> => {
   const state = emptyArtifactAnalysis();
+  const packageTypeFor = packageTypeLookup(fileSet, state.jsonDocuments);
   let interruption: AnalysisError | null = null;
   const selectedFileCount =
     fileSet.files.length - (fileSet.source_selection?.unselected_files ?? 0);
@@ -117,6 +121,7 @@ export const analyzeAndAdoptJavaScriptArtifactFiles = async (
         projection.remainingFileCapacity(),
         signal,
         onPhase === undefined ? undefined : (phase) => onPhase(file, phase),
+        packageTypeFor(file),
       );
       const facts = result.ok ? result.value : result.error;
       const applicationProjectionFailure = facts.applicationProjectionFailure;
@@ -366,6 +371,43 @@ const addStructuredObservations = (
   const json = analyzeJavaScriptJsonModule(file, state.jsonDocuments);
   state.jsonModules.push(json);
   if (json.status === "invalid") state.parseFailures += 1;
+};
+
+/**
+ * Node's package scope for a source is its nearest package.json; the lookup
+ * stops at a `node_modules` directory (Node's package scope resolution). Only
+ * a same-container, readable manifest object establishes the type; any other
+ * nearest manifest, or none in the inventory, leaves the scope unknown.
+ */
+const packageTypeLookup = (
+  fileSet: JavaScriptArtifactFileSet,
+  jsonDocuments: JavaScriptJsonDocuments,
+): ((file: JavaScriptArtifactFile) => JavaScriptPackageType) => {
+  const manifests = new Map<string, JavaScriptArtifactFile>();
+  for (const file of fileSet.files)
+    if (posix.basename(file.path) === "package.json")
+      manifests.set(
+        `${file.container_sha256}:${posix.dirname(file.path)}`,
+        file,
+      );
+  return (file) => {
+    for (
+      let directory = posix.dirname(file.path);
+      posix.basename(directory) !== "node_modules";
+      directory = posix.dirname(directory)
+    ) {
+      const manifest = manifests.get(`${file.container_sha256}:${directory}`);
+      if (manifest !== undefined) {
+        const document = jsonDocuments.read(manifest);
+        if (document.status !== "included" || document.packageFields === null)
+          return "unknown";
+        const type = document.packageFields.type;
+        return type === "module" || type === "commonjs" ? type : "unspecified";
+      }
+      if (directory === "." || directory === "" || directory === "/") break;
+    }
+    return "unknown";
+  };
 };
 
 const parsePackage = (

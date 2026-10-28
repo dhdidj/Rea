@@ -724,7 +724,7 @@ it("withholds unchanged when source inventory coverage is incomplete", () => {
       right,
       jsonValueSchema.parse({ ...real, status: "changed" }),
     ).status,
-  ).toBe("fail");
+  ).toBe("unknown");
   const fake = jsonValueSchema.parse({
     ...real,
     status: "unchanged",
@@ -818,6 +818,26 @@ it("passes independently sourced, fully corroborated unchanged inventories", () 
   expect(
     verifyArtifactComparison(left, right, jsonValueSchema.parse(actual)).status,
   ).toBe("pass");
+  const changed = compareArtifacts(left, ARTIFACT_COMPARISON_EXAMPLE.right);
+  const inconsistent = jsonValueSchema.parse({
+    ...changed,
+    left_manifest_id: actual.left_manifest_id,
+    right_manifest_id: actual.right_manifest_id,
+    changes: changed.changes.map((row) => ({
+      ...row,
+      evidence_links: [left.evidence_id, right.evidence_id],
+    })),
+  });
+  expect(verifyArtifactComparison(left, right, inconsistent).status).toBe(
+    "unknown",
+  );
+  expect(
+    verifyArtifactComparison(
+      left,
+      ARTIFACT_COMPARISON_EXAMPLE.right,
+      jsonValueSchema.parse(changed),
+    ).status,
+  ).toBe("fail");
 });
 
 it.each(["unchanged", "unknown", "changed"] as const)(

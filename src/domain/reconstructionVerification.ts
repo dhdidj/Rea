@@ -220,7 +220,13 @@ const assessArtifactSourceComparison = (
   try {
     const left = sides.left.map((id) => records.get(id)!);
     const right = sides.right.map((id) => records.get(id)!);
-    if (observed === "unchanged") {
+    if (
+      observed === "unchanged" ||
+      observed === "changed" ||
+      observed === "added" ||
+      observed === "removed" ||
+      observed === "contradiction"
+    ) {
       const key = JSON.stringify([sides.left, sides.right]);
       let actual = replays.get(key);
       if (actual === undefined) {
@@ -234,7 +240,7 @@ const assessArtifactSourceComparison = (
       }
       leftManifest = actual.left_manifest_id;
       rightManifest = actual.right_manifest_id;
-      corroborated = actual.status === "unchanged";
+      corroborated = actual.status === observed;
     } else {
       leftManifest =
         parseArtifactInventoryEvidence(left).inventory.manifest.manifest_id;
@@ -261,7 +267,9 @@ const assessArtifactSourceComparison = (
     );
   return corroborated
     ? []
-    : ["Artifact source inventories do not establish an unchanged comparison."];
+    : [
+        "Artifact source inventories do not corroborate the claimed comparison status.",
+      ];
 };
 
 const readValidatedSourceFacts = (

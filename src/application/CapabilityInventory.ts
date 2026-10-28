@@ -586,7 +586,7 @@ const workflowAvailabilityFor = ({
                 : "provider_missing",
           remediation:
             policy.androidAnalysisAvailability?.reason ??
-            "Set REA_JADX_MCP_JAR to a caller-supplied jadx-headless-mcp 0.7.1 JAR and provide a full JDK on Linux, macOS, or Windows x64 with its matching bundled native controls.",
+            "Set REA_JADX_MCP_JAR to a caller-supplied jadx-headless-mcp 0.7.1 JAR from https://github.com/1013503897/jadx-headless-mcp/releases/download/v0.7.1/jadx-headless-mcp-0.7.1-all.jar and provide a full JDK on Linux, macOS, or Windows x64 with its matching bundled native controls. The similarly named jadx-headless-mcp v1.x project is not compatible.",
         };
   if (kind === "adb-provider")
     return ownerProbeAvailability(

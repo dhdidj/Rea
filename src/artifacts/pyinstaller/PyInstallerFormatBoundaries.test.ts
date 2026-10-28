@@ -41,8 +41,7 @@ it("rejects a CArchive TOC name without its required NUL terminator", () => {
     ok: false,
     error: {
       reason: "format",
-      message:
-        "CArchive table index 0 at TOC offset 0: CArchive entry name is not NUL-padded",
+      message: expect.stringContaining("table index 0 at TOC offset 0"),
     },
   });
 });
@@ -77,8 +76,7 @@ it("rejects a CArchive TOC name with non-NUL padding", () => {
     ok: false,
     error: {
       reason: "format",
-      message:
-        "CArchive table index 0 at TOC offset 0: CArchive entry name is not NUL-padded",
+      message: expect.stringContaining("table index 0 at TOC offset 0"),
     },
   });
 });

@@ -189,7 +189,7 @@ export const publishCliAnalysisEvidence = async (
     evidenceOutput,
     input,
   );
-  if (!published.ok) return projectFailure(published.error);
+  if (!published.ok) return projectFailure(published.error.error);
   return detail === "summary"
     ? {
         summary: published.value.delivered,
@@ -210,7 +210,11 @@ const publishDeliveredEvidence = async (
 ): Promise<
   Result<
     { readonly delivered: Evidence; readonly receipt: JsonValue },
-    AnalysisError
+    {
+      readonly error: AnalysisError;
+      /** The projected view, once projection succeeded. */
+      readonly delivered?: Evidence;
+    }
   >
 > => {
   const delivered =
@@ -221,7 +225,7 @@ const publishDeliveredEvidence = async (
         })
       : ok(complete);
   if (!delivered.ok)
-    return err(delivered.error.retainPartialObservation(complete));
+    return err({ error: delivered.error.retainPartialObservation(complete) });
   // This projection answers the same direct invocation as its parent. Later
   // inspect_analysis_view calls own their own input and do not inherit it.
   const selected =
@@ -229,7 +233,8 @@ const publishDeliveredEvidence = async (
       ? withEvidenceCallerInputPath(delivered.value, complete.caller_input_path)
       : delivered.value;
   const inspectionSources = analysisEvidenceSources(complete);
-  if (!inspectionSources.ok) return inspectionSources;
+  if (!inspectionSources.ok)
+    return err({ error: inspectionSources.error, delivered: selected });
   const published = await publishEvidenceDelivery({
     bundle: createEvidenceBundle([
       ...new Map(
@@ -244,20 +249,29 @@ const publishDeliveredEvidence = async (
     operation: input.operation,
     signal: input.signal,
   });
-  if (!published.ok) return published;
+  if (!published.ok)
+    return err({ error: published.error, delivered: selected });
   const { path, bytes } = published.value.evidenceBundle;
   return ok({
     delivered: published.value.delivered,
-    receipt: {
-      ...(input.sensitiveValues?.some(
-        (literal) => literal !== "" && path.includes(literal),
-      )
-        ? {}
-        : { path }),
-      bytes,
-    },
+    receipt: bundleReceipt(path, bytes, input),
   });
 };
+
+/** A receipt omits a path that contains an excluded sensitive literal. */
+const bundleReceipt = (
+  path: string | undefined,
+  bytes: JsonValue,
+  input: Pick<CliEvidenceDelivery, "sensitiveValues">,
+): JsonValue => ({
+  ...(path === undefined ||
+  input.sensitiveValues?.some(
+    (literal) => literal !== "" && path.includes(literal),
+  )
+    ? {}
+    : { path }),
+  bytes,
+});
 
 const isJsonObject = (
   value: JsonValue | undefined,
@@ -301,34 +315,8 @@ const publishFailurePartialEvidence = async (
     evidenceOutput,
     input,
   );
-  if (!published.ok) {
-    const refusal = projectAnalysisError(
-      redactExplicitFailure(published.error, input.sensitiveValues ?? []),
-    );
-    // A publication can commit before a later cancellation; keep its receipt.
-    const committed =
-      isJsonObject(refusal.details) && isJsonObject(refusal.details.diagnostics)
-        ? refusal.details.diagnostics.evidence_bundle
-        : undefined;
-    return {
-      ...failure,
-      details: {
-        ...details,
-        diagnostics: {
-          ...diagnostics,
-          ...(committed === undefined ? {} : { evidence_bundle: committed }),
-          evidence_bundle_error: {
-            code: refusal.code,
-            message: refusal.message,
-            limitation:
-              committed === undefined
-                ? "The partial Evidence was not published to --evidence_output; it remains complete in details.partial_observation."
-                : "The partial Evidence was published to --evidence_output before delivery stopped; it also remains complete in details.partial_observation.",
-          },
-        },
-      },
-    };
-  }
+  if (!published.ok)
+    return refusedPartialPublication(failure, details, published.error, input);
   return {
     ...failure,
     details: {
@@ -336,5 +324,115 @@ const publishFailurePartialEvidence = async (
       partial_observation: published.value.delivered,
       diagnostics: { ...diagnostics, evidence_bundle: published.value.receipt },
     },
+  };
+};
+
+type JsonObject = { readonly [key: string]: JsonValue };
+
+/**
+ * Keep the analysis failure when partial publication is refused. A refusal
+ * can follow a commit: cleanup that stays incomplete reports
+ * published_path and bytes, and a later cancellation reports
+ * diagnostics.evidence_bundle. A committed file gets the same receipt as a
+ * published one, and incomplete publication cleanup keeps the details shape
+ * of a successful run's cleanup_incomplete outcome.
+ */
+const refusedPartialPublication = (
+  failure: JsonObject,
+  details: JsonObject,
+  refused: { readonly error: AnalysisError; readonly delivered?: Evidence },
+  input: CliEvidenceDelivery,
+): JsonValue => {
+  const diagnostics = isJsonObject(details.diagnostics)
+    ? details.diagnostics
+    : {};
+  const refusal = projectAnalysisError(
+    redactExplicitFailure(refused.error, input.sensitiveValues ?? []),
+  );
+  const refusalDetails: JsonObject = isJsonObject(refusal.details)
+    ? refusal.details
+    : {};
+  const receipt = committedReceipt(refusalDetails, input);
+  const cleanupIncomplete = refusalDetails.cleanup === "incomplete";
+  return {
+    ...failure,
+    details: {
+      ...details,
+      ...(cleanupIncomplete
+        ? publicationCleanupDetails(details, refusalDetails)
+        : {}),
+      ...(receipt === undefined || refused.delivered === undefined
+        ? {}
+        : { partial_observation: refused.delivered }),
+      diagnostics: {
+        ...diagnostics,
+        ...(receipt === undefined ? {} : { evidence_bundle: receipt }),
+        evidence_bundle_error: {
+          code: refusal.code,
+          message: refusal.message,
+          limitation:
+            receipt === undefined
+              ? "The partial Evidence was not published to --evidence_output; it remains complete in details.partial_observation."
+              : cleanupIncomplete
+                ? "The partial Evidence was published to --evidence_output, but its staging cleanup remains incomplete; details.resources lists what remains."
+                : "The partial Evidence was published to --evidence_output before delivery stopped.",
+        },
+      },
+    },
+  };
+};
+
+/** Either committed receipt form, as {path, bytes}. */
+const committedReceipt = (
+  refusalDetails: JsonObject,
+  input: CliEvidenceDelivery,
+): JsonValue | undefined => {
+  if (refusalDetails.published === true && refusalDetails.bytes !== undefined)
+    return bundleReceipt(
+      typeof refusalDetails.published_path === "string"
+        ? refusalDetails.published_path
+        : undefined,
+      refusalDetails.bytes,
+      input,
+    );
+  const later = isJsonObject(refusalDetails.diagnostics)
+    ? refusalDetails.diagnostics.evidence_bundle
+    : undefined;
+  return isJsonObject(later)
+    ? bundleReceipt(
+        typeof later.path === "string" ? later.path : undefined,
+        later.bytes ?? null,
+        input,
+      )
+    : undefined;
+};
+
+/**
+ * Publication and cleanup fields of an incomplete-cleanup refusal, in the
+ * details shape a successful run reports. Fields the analysis failure already
+ * reports are merged: resources are joined and its own reason is kept.
+ */
+const publicationCleanupDetails = (
+  details: JsonObject,
+  refusalDetails: JsonObject,
+): JsonObject => {
+  const keep = (key: string) =>
+    refusalDetails[key] === undefined || details[key] !== undefined
+      ? {}
+      : { [key]: refusalDetails[key] };
+  const resources = [
+    ...(Array.isArray(details.resources) ? details.resources : []),
+    ...(Array.isArray(refusalDetails.resources)
+      ? refusalDetails.resources
+      : []),
+  ];
+  return {
+    ...keep("published"),
+    ...keep("published_path"),
+    ...keep("bytes"),
+    ...keep("cleanup_reason"),
+    ...keep("cleanup_report"),
+    cleanup: "incomplete",
+    resources,
   };
 };

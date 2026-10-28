@@ -1,5 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -7,7 +8,7 @@ import { parseEvidence } from "../../../src/domain/evidence.js";
 import { parseEvidenceBundle } from "../../../src/domain/evidenceBundle.js";
 import { javascriptApplicationAnalysisResultSchema } from "../../../src/domain/javascript/javascriptApplicationAnalysis.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
-import { cliTest } from "../../support/cli/cliFixture.js";
+import { cliTest, type TestCli } from "../../support/cli/cliFixture.js";
 
 // Inventory completes before the first JavaScript source reaches its 1 ms
 // deadline, so the partial Evidence holds completed artifact facts and
@@ -227,4 +228,127 @@ cliTest(
     );
   },
   120_000,
+);
+
+// Drive the real staged publication of the partial Evidence across its
+// commit point, as evidenceOutputPublicationCli does for successful results.
+const publishPartialWithSeam = async (
+  cli: TestCli,
+  detail: "summary" | "complete",
+  publication: Record<string, unknown>,
+) => {
+  const root = await application();
+  const work = await createTestTempDirectory("rea-js-failure-seam-");
+  const destination = join(work, "partial.json");
+  const reply = await cli.run({
+    cwd: work,
+    arguments: timeoutArguments(
+      root,
+      "--detail",
+      detail,
+      "--evidence_output",
+      destination,
+    ),
+    environment: {
+      REA_TEST_EVIDENCE_PUBLICATION: JSON.stringify({
+        prefix: join(await realpath(work), ".rea-write-"),
+        marker: join(work, "signal.json"),
+        ...publication,
+      }),
+      NODE_OPTIONS: `--max-old-space-size=2048 --import=${pathToFileURL(resolve("tests/fixtures/evidencePublicationPreload.mjs")).href}`,
+    },
+  });
+  const staging = (await readdir(work)).filter((name) =>
+    name.startsWith(".rea-write-"),
+  );
+  const bytes = await readFile(destination);
+  const [record] = parseEvidenceBundle(JSON.parse(bytes.toString())).records;
+  if (record === undefined)
+    throw new Error("The published bundle lacks the partial Evidence");
+  return { reply, destination, staging, bytes: bytes.length, record };
+};
+
+cliTest(
+  "keeps the original failure, the committed receipt and the cleanup details when staging cleanup stays incomplete",
+  async ({ cli }) => {
+    const { reply, destination, staging, bytes, record } =
+      await publishPartialWithSeam(cli, "summary", { cleanup_failures: 1_000 });
+    expect(reply.exitCode).toBe(1);
+    const failure = failureSchema.parse(reply.json);
+    expect(failure.remediation.action).toContain("partial_observation");
+    // The success path reports this outcome as details.published,
+    // published_path, bytes and cleanup; the failure keeps the same shape.
+    expect(failure.details).toMatchObject({
+      published: true,
+      published_path: destination,
+      bytes,
+      cleanup: "incomplete",
+    });
+    expect(failure.details.diagnostics?.evidence_bundle).toEqual({
+      path: destination,
+      bytes,
+    });
+    expect(failure.details.diagnostics?.evidence_bundle_error).toMatchObject({
+      code: "cleanup_incomplete",
+    });
+    expect(failure.details.partial_observation).toMatchObject({
+      normalized_result: {
+        kind: "summary",
+        parent_evidence_id: record.evidence_id,
+      },
+    });
+    expect(staging).toHaveLength(1);
+  },
+  60_000,
+);
+
+cliTest(
+  "delivers the receipt once a failed staging cleanup is confirmed by retry",
+  async ({ cli }) => {
+    const { reply, destination, staging, bytes, record } =
+      await publishPartialWithSeam(cli, "summary", { cleanup_failures: 1 });
+    expect(reply.exitCode).toBe(1);
+    const failure = failureSchema.parse(reply.json);
+    expect(failure.details.diagnostics?.evidence_bundle).toEqual({
+      path: destination,
+      bytes,
+    });
+    expect(failure.details.diagnostics).not.toHaveProperty(
+      "evidence_bundle_error",
+    );
+    expect(failure.details.partial_observation).toMatchObject({
+      normalized_result: { parent_evidence_id: record.evidence_id },
+    });
+    expect(staging).toEqual([]);
+  },
+  60_000,
+);
+
+cliTest(
+  "keeps the original failure and the committed receipt when SIGINT arrives after commit",
+  async ({ cli }) => {
+    const { reply, destination, staging, bytes, record } =
+      await publishPartialWithSeam(cli, "summary", {
+        phase: "cleanup",
+        signal: "SIGINT",
+        delivery: process.platform === "win32" ? "event" : "os",
+      });
+    expect(reply.exitCode).toBe(130);
+    const failure = failureSchema.parse(reply.json);
+    expect(failure.details.diagnostics?.evidence_bundle).toEqual({
+      path: destination,
+      bytes,
+    });
+    expect(failure.details.diagnostics?.evidence_bundle_error).toMatchObject({
+      code: "cancelled",
+    });
+    expect(failure.details.partial_observation).toMatchObject({
+      normalized_result: {
+        kind: "summary",
+        parent_evidence_id: record.evidence_id,
+      },
+    });
+    expect(staging).toEqual([]);
+  },
+  60_000,
 );

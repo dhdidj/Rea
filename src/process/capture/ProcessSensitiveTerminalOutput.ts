@@ -47,6 +47,8 @@ export const redactTerminalChunks = (
   if (text.length * values.length > MAX_REDACTION_SCAN_UNITS)
     return chunks.map((chunk) => mask.repeat(chunk.length));
 
+  if (text.length > MAX_REDACTION_SCAN_UNITS)
+    return chunks.map((chunk) => mask.repeat(chunk.length));
   const intervals = new Int32Array(text.length + 1);
   let found = false;
   for (const value of values) {

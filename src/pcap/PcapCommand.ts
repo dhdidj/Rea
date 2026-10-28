@@ -29,6 +29,7 @@ import {
   WindowsBatchCommandError,
 } from "../process/WindowsBatchCommand.js";
 import { pcapToolUnavailable } from "./PcapConfiguration.js";
+import { redactPcapDiagnostic } from "./PcapDiagnosticRedaction.js";
 
 export type PcapCommandLauncher = NonNullable<
   Parameters<typeof runOwnedCommand>[2]
@@ -139,8 +140,8 @@ export const runPcapCommand = async (options: {
               : ownedCommandResources(owner.launch.ownership);
           const snapshot = owner.snapshot();
           const capturedOutput = {
-            stdout: snapshot.stdout.text,
-            stderr: snapshot.stderr.text,
+            stdout: redactPcapDiagnostic(snapshot.stdout.text, snapshot.diagnosticTruncated === true || snapshot.outputIncomplete === true),
+            stderr: redactPcapDiagnostic(snapshot.stderr.text, snapshot.diagnosticTruncated === true || snapshot.outputIncomplete === true),
             truncated:
               snapshot.diagnosticTruncated === true ||
               snapshot.outputIncomplete === true,
@@ -207,8 +208,8 @@ export const runPcapCommand = async (options: {
         cause.snapshot === null
           ? { stdout: "", stderr: "", truncated: true }
           : {
-              stdout: cause.snapshot.stdout.text,
-              stderr: cause.snapshot.stderr.text,
+              stdout: redactPcapDiagnostic(cause.snapshot.stdout.text, cause.snapshot.diagnosticTruncated === true || cause.snapshot.outputIncomplete === true),
+              stderr: redactPcapDiagnostic(cause.snapshot.stderr.text, cause.snapshot.diagnosticTruncated === true || cause.snapshot.outputIncomplete === true),
               truncated:
                 cause.snapshot.diagnosticTruncated === true ||
                 cause.snapshot.outputIncomplete === true,
@@ -300,7 +301,7 @@ export const runPcapCommand = async (options: {
       );
     const diagnostic =
       cause instanceof OwnedCommandFailure
-        ? cause.snapshot?.stderr.text.trim() || cause.message
+        ? redactPcapDiagnostic(cause.snapshot?.stderr.text.trim() ?? "", cause.snapshot?.diagnosticTruncated === true || cause.snapshot?.outputIncomplete === true) || cause.message
         : cause instanceof Error
           ? cause.message
           : String(cause);

@@ -83,7 +83,7 @@ const redactEncodedJson = (encoded: string, incomplete: boolean): string => {
 
 /** Handle Wireshark JSON strings even when slash/userinfo uses JSON escapes. */
 const redactJsonStrings = (text: string, truncated: boolean): string => {
-  let result = "";
+  const parts: string[] = [];
   let cursor = 0;
   while (cursor < text.length) {
     const opening = text.indexOf('"', cursor);
@@ -104,15 +104,16 @@ const redactJsonStrings = (text: string, truncated: boolean): string => {
     } catch {
       // A malformed producer string is still checked in raw spelling below.
     }
-    result += text.slice(cursor, opening + 1) + safe;
+    parts.push(text.slice(cursor, opening + 1), safe);
     if (!complete) {
       cursor = text.length;
       break;
     }
-    result += '"';
+    parts.push('"');
     cursor = closing + 1;
   }
-  return result + text.slice(cursor);
+  parts.push(text.slice(cursor));
+  return parts.join("");
 };
 
 /** Bounded failure/cleanup projection shared by the packet-capture provider. */

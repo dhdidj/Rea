@@ -7,6 +7,7 @@ import {
   digestProcessCommitment,
 } from "./processScenario.js";
 import { parseProcessCapture } from "./processCaptureParsing.js";
+import type { FileState } from "./processCapture.js";
 
 import {
   deriveProcessComparisonStatus,
@@ -148,6 +149,117 @@ it("preserves independently observed file changes alongside an unknown effect", 
         first_divergence: { status: "unknown" },
       });
   }
+});
+
+it("compares recoverable symlink bytes across old and current captures", () => {
+  const base = emptyCapture();
+  const link = {
+    path: "root_0:link",
+    type: "symlink" as const,
+    mode: 0o777,
+    size: 1,
+    sha256: null,
+    symlink_target: null,
+    symlink_target_hex: "ff",
+  };
+  const make = (target: Extract<FileState, { type: "symlink" }>) => {
+    const effect = {
+      path: link.path,
+      status: "unknown" as const,
+      before: target,
+      after: target,
+      reason: "Target bytes were not retained.",
+    };
+    return {
+      ...base,
+      filesystem_effects: [effect],
+      filesystem_checkpoints: base.filesystem_checkpoints.map((checkpoint) => ({
+        ...checkpoint,
+        files: [target],
+        effects: checkpoint.name === "after_settlement" ? [effect] : [],
+      })),
+    };
+  };
+  const modern = make(link);
+  const { symlink_target_hex: _hex, ...legacyLink } = link;
+  const legacy = make({ ...legacyLink, symlink_target: "a" });
+  for (const [left, right] of [
+    [modern, legacy],
+    [legacy, modern],
+  ] as const)
+    expect(compareFullyObserved(left, right)).toMatchObject({
+      filesystem: "changed",
+      first_divergence: { status: "unknown" },
+    });
+  const ambiguous = make({ ...legacyLink, symlink_target: "\ufffd" });
+  expect(compareFullyObserved(modern, ambiguous)).toMatchObject({
+    filesystem: "unknown",
+    status: "unknown",
+  });
+});
+
+it("preserves a definite attributed filesystem trace failure beside unknown effects", () => {
+  const base = emptyCapture();
+  const unknown = {
+    path: "root_0:link",
+    status: "unknown" as const,
+    before: null,
+    after: null,
+    reason: "Unobserved target.",
+  };
+  const make = (time: number) => ({
+    ...base,
+    event_journal: [
+      {
+        capture_order: 0,
+        collection: "filesystem_checkpoints" as const,
+        index: 0,
+      },
+      { capture_order: 1, collection: "lifecycle" as const, index: 0 },
+      { capture_order: 2, collection: "lifecycle" as const, index: 1 },
+      {
+        capture_order: 3,
+        collection: "filesystem_checkpoints" as const,
+        index: 1,
+      },
+    ],
+    filesystem_effects: [unknown],
+    filesystem_checkpoints: base.filesystem_checkpoints.map((checkpoint) =>
+      checkpoint.name === "after_settlement"
+        ? { ...checkpoint, at_ms: time, effects: [unknown] }
+        : checkpoint,
+    ),
+  });
+  const left = make(50);
+  const right = make(60);
+  const traceSpecification = {
+    events: [
+      {
+        id: "before",
+        source: "filesystem" as const,
+        exact: jsonValueSchema.parse(left.filesystem_checkpoints[0]),
+        cardinality: { kind: "required" as const },
+      },
+      {
+        id: "final",
+        source: "filesystem" as const,
+        exact: jsonValueSchema.parse(left.filesystem_checkpoints[1]),
+        cardinality: { kind: "required" as const },
+      },
+    ],
+    language: {
+      kind: "finite_traces" as const,
+      variants: [{ id: "v", trace: ["before", "final"] }],
+    },
+  };
+  expect(
+    compareFullyObserved(left, right, { traceSpecification }),
+  ).toMatchObject({
+    status: "changed",
+    filesystem: "changed",
+    first_divergence: { status: "unknown" },
+    trace: { verdict: "different" },
+  });
 });
 
 it("preserves proven file additions and removals beside an unrelated unknown effect", () => {

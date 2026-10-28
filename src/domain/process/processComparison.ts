@@ -1,6 +1,7 @@
 import canonicalize from "canonicalize";
 import { z } from "zod";
 import { processSourceTruncated } from "./processCaptureCoverage.js";
+import { symlinkTargetIdentity } from "./symlinkTarget.js";
 import type {
   ProcessObservationLocation,
   ProcessObservationSource,
@@ -230,11 +231,10 @@ const hasKnownFilesystemDifference = (
           file.sha256 !== other.sha256
         );
       if (file.type === "symlink" && other.type === "symlink") {
-        if (
-          file.symlink_target_hex !== undefined &&
-          other.symlink_target_hex !== undefined
-        )
-          return file.symlink_target_hex !== other.symlink_target_hex;
+        const leftTarget = symlinkTargetIdentity(file);
+        const rightTarget = symlinkTargetIdentity(other);
+        if (leftTarget !== null && rightTarget !== null)
+          return leftTarget !== rightTarget;
         return (
           file.symlink_target !== null &&
           other.symlink_target !== null &&
@@ -445,16 +445,16 @@ const applyTraceVerdict = (
   ): ComparisonStatus => {
     const exact = dimensions[dimension];
     if (!covered.has(dimension)) return exact;
-    if (
-      dimension === "filesystem" &&
-      captures.some(hasUnknownFilesystemEffects)
-    )
-      return exact;
     if (trace.verdict === "nonconforming") return exact;
     if (trace.verdict === "different")
       return traceShowsDifference && attributed.has(dimension)
         ? "changed"
         : exact;
+    if (
+      dimension === "filesystem" &&
+      captures.some(hasUnknownFilesystemEffects)
+    )
+      return exact;
     if (
       trace.verdict === "unknown" &&
       ["changed", "added", "removed"].includes(exact)

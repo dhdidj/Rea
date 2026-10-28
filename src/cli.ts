@@ -198,7 +198,7 @@ export const createCli = (
   presentOmittableDefaults(cli);
   if (resultOutput !== undefined) streamCliCommandResults(cli, resultOutput);
   const serveStrict = validateCliArguments(cli, (tokens, command) => {
-    if (command !== "setup") return;
+    if (command !== "setup" && command !== "environment-build") return;
     const invalid = tokens.find((token) => {
       const match = /^--(?:dry-run|dryRun)=(.*)$/s.exec(token);
       return match !== null && match[1] !== "true" && match[1] !== "false";

@@ -138,11 +138,12 @@ it.each([{ tools: ["binary_session"] }, { tools: ["*"] }, { tools: [] }])(
     const home = await createTestTempDirectory("rea-copilot-tools-policy-");
     const configPath = join(home, ".copilot/mcp-config.json");
     await mkdir(dirname(configPath));
+    const command = currentClientRegistrationCommand();
     const original = JSON.stringify({
       mcpServers: {
         rea: {
-          command: "npx",
-          args: ["-y", PRODUCT_IDENTITY.registrationPackageSpecifier, "mcp"],
+          command: command[0],
+          args: command.slice(1),
           type: "stdio",
           tools,
           future_policy: { requireReview: true },
@@ -164,11 +165,7 @@ it.each([{ tools: ["binary_session"] }, { tools: ["*"] }, { tools: [] }])(
     expect(await status()).toMatchObject({ state: "aligned" });
     const overrides = { REA_MCP_INPUT_SCHEMA_PROFILE: "compact" };
     expect(
-      await configureClientConfiguration(
-        client,
-        overrides,
-        currentClientRegistrationCommand(),
-      ),
+      await configureClientConfiguration(client, overrides, command),
     ).toMatchObject({ status: "configured" });
     expect(JSON.parse(await readFile(configPath, "utf8"))).toMatchObject({
       mcpServers: {
@@ -180,11 +177,7 @@ it.each([{ tools: ["binary_session"] }, { tools: ["*"] }, { tools: [] }])(
       },
     });
     expect(
-      await configureClientConfiguration(
-        client,
-        overrides,
-        currentClientRegistrationCommand(),
-      ),
+      await configureClientConfiguration(client, overrides, command),
     ).toEqual({ status: "unchanged" });
     expect(await status()).toMatchObject({ state: "aligned" });
     expect(await readFile(`${configPath}.rea.backup`, "utf8")).toBe(original);

@@ -21,8 +21,9 @@ export const codexToolPolicy = {
 /** The same client policy in native table and inline-table representations. */
 export const codexToolPolicySource = (
   layout: "tables" | "inline table",
+  registrationCommand: readonly string[] = currentClientRegistrationCommand(),
 ): string => {
-  const [command, ...args] = currentClientRegistrationCommand();
+  const [command, ...args] = registrationCommand;
   return layout === "tables"
     ? [
         "# retained root comment",

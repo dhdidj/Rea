@@ -160,11 +160,12 @@ describe("Swift classification through MCP", () => {
 });
 
 describe("Swift category uncertainty through MCP", () => {
-  it("keeps unsupported nested Unicode names unresolved through MCP filters", async () => {
+  it("keeps unsupported nested Unicode and substituted contexts unresolved through MCP filters", async () => {
     const names = [
       "_$s6Nested8EnvelopeV007IhuqBAbO8describeSSyF",
       "_$s6Nested8EnvelopeV007jvrtDBlCAEycfC",
       "_$s6Nested8EnvelopeV007jvrtDBlCMa",
+      "_$s4Demo3BoxCA2A1PRzlE7FailureO5valueSiyF",
     ];
     const procedures = [
       ...names.map((name, index) => ({
@@ -187,7 +188,7 @@ describe("Swift category uncertainty through MCP", () => {
       }),
     );
     expect(all).toMatchObject({
-      total: 6,
+      total: 7,
       categories: {
         structs: {
           items: [{ name: "_$s6Nested8EnvelopeVMa" }],

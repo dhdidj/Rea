@@ -58,7 +58,7 @@ export const classifySwiftSymbol = (
         // A substituted module can introduce a constrained extension after
         // the nominal type. This parser does not decode that context, so it
         // cannot retain the preceding nominal category as the member's owner.
-        mangling.startsWith("AA", offset)
+        /^A[0-9]*A/u.test(mangling.slice(offset))
       )
         category = null;
       break;

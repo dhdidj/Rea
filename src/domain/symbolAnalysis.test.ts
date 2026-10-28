@@ -29,13 +29,16 @@ describe("modern Swift category evidence", () => {
     const names = [
       "_$s1M7WrapperVAASQRzlE4sameySbxF",
       "_$s1M3BoxVAARi_zrlE1vxvM",
+      // Swift 6.2.3 emits A2A for this constrained generic extension.
+      "_$s4Demo3BoxCA2A1PRzlE4callSiyF",
+      "_$s4Demo3BoxCA2A1PRzlE7FailureO5valueSiyF",
     ];
     const result = categorizeSwiftTypes(
       names.map((name, index) => ({ address: String(index), name })),
     );
     expect(result.categories).toMatchObject({
       structs: { count: 0 },
-      other: { count: 2 },
+      other: { count: 4 },
     });
     expect(result.unclassified.map(({ name }) => name)).toEqual(names);
     const controls = [

@@ -281,7 +281,8 @@ const isJsonObject = (
 /**
  * A failure that carries partial Evidence publishes it to --evidence_output
  * as a successful run would. The failure keeps its code, message and
- * remediation; with summary detail, the inline partial observation becomes
+ * remediation unless publication cleanup remains incomplete; with summary
+ * detail, the inline partial observation becomes
  * its summary view, and details.diagnostics.evidence_bundle names the file.
  * Cancellation keeps its no-publication contract, raw provider observations
  * stay inline, and a refused publication keeps the complete partial Evidence
@@ -330,12 +331,14 @@ const publishFailurePartialEvidence = async (
 type JsonObject = { readonly [key: string]: JsonValue };
 
 /**
- * Keep the analysis failure when partial publication is refused. A refusal
+ * Retain the analysis failure when partial publication is refused. A refusal
  * can follow a commit: cleanup that stays incomplete reports
  * published_path and bytes, and a later cancellation reports
  * diagnostics.evidence_bundle. A committed file gets the same receipt as a
  * published one, and incomplete publication cleanup keeps the details shape
- * of a successful run's cleanup_incomplete outcome.
+ * of a successful run's cleanup_incomplete outcome. Until cleanup is
+ * confirmed, the canonical code and remediation must also reflect the live
+ * resource owner, while preserving the original execution failure.
  */
 const refusedPartialPublication = (
   failure: JsonObject,
@@ -356,10 +359,20 @@ const refusedPartialPublication = (
   const cleanupIncomplete = refusalDetails.cleanup === "incomplete";
   return {
     ...failure,
+    ...(cleanupIncomplete
+      ? {
+          code: "cleanup_incomplete",
+          retryable: false,
+          remediation: refusal.remediation,
+        }
+      : {}),
     details: {
       ...details,
       ...(cleanupIncomplete
-        ? publicationCleanupDetails(details, refusalDetails)
+        ? {
+            ...publicationCleanupDetails(details, refusalDetails),
+            execution_failure: details.execution_failure ?? failure.code,
+          }
         : {}),
       ...(receipt === undefined || refused.delivered === undefined
         ? {}

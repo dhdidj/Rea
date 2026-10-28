@@ -269,13 +269,18 @@ const publishPartialWithSeam = async (
 };
 
 cliTest(
-  "keeps the original failure, the committed receipt and the cleanup details when staging cleanup stays incomplete",
+  "retains the original failure and committed receipt when staging cleanup stays incomplete",
   async ({ cli }) => {
     const { reply, destination, staging, bytes, record } =
       await publishPartialWithSeam(cli, "summary", { cleanup_failures: 1_000 });
     expect(reply.exitCode).toBe(1);
-    const failure = failureSchema.parse(reply.json);
-    expect(failure.remediation.action).toContain("partial_observation");
+    const failure = failureSchema
+      .extend({
+        code: z.literal("cleanup_incomplete"),
+        retryable: z.literal(false),
+      })
+      .parse(reply.json);
+    expect(failure.remediation.action).toContain("cleanup");
     // The success path reports this outcome as details.published,
     // published_path, bytes and cleanup; the failure keeps the same shape.
     expect(failure.details).toMatchObject({
@@ -283,6 +288,7 @@ cliTest(
       published_path: destination,
       bytes,
       cleanup: "incomplete",
+      execution_failure: "provider_timeout",
     });
     expect(failure.details.diagnostics?.evidence_bundle).toEqual({
       path: destination,

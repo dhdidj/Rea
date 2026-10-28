@@ -1138,7 +1138,7 @@ after commit, the `cleanup_incomplete` error reports the same file as
 A failure that carries partial Evidence in `details.partial_observation`, such
 as `provider_timeout` or `resource_constraint`, publishes that partial Evidence
 to `--evidence_output` under the same new-file and atomic rules, then keeps its
-error code, message and remediation. With `--detail summary`,
+error code, message and remediation when cleanup is confirmed. With `--detail summary`,
 `details.partial_observation` holds the summary view of the partial Evidence
 instead of the complete record, and `details.diagnostics.evidence_bundle`
 reports the written path and byte count. If publication is refused before
@@ -1146,7 +1146,8 @@ commit, for example because the file already exists, the complete partial
 Evidence stays inline and `details.diagnostics.evidence_bundle_error` gives the
 refusal's code, message and a limitation. A refusal after commit keeps the
 receipt in `details.diagnostics.evidence_bundle` and the delivered view: when
-staging cleanup stays incomplete, `details` also carries `published`,
+staging cleanup stays incomplete, the code becomes `cleanup_incomplete`, the
+original failure is retained in `details.execution_failure`, and `details` also carries `published`,
 `published_path`, `bytes`, `cleanup: "incomplete"` and `resources`, as for a
 successful run, and a later cancellation reports `cancelled` in
 `evidence_bundle_error` with the signal's exit status. Without

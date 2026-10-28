@@ -75,6 +75,18 @@ it("returns an honest no-match result and rejects empty queries and invalid boun
     message: expect.stringContaining("does not indicate"),
   });
   expect(
+    await valueOf(
+      searchGuidanceWithReader(
+        { query: "how do I frobnicate qzxv" },
+        guideFixture,
+        resources,
+      ),
+    ),
+  ).toMatchObject({
+    status: "no_matches",
+    total_matches: 0,
+  });
+  expect(
     await searchGuidanceWithReader({ query: "  " }, guideFixture, resources),
   ).toMatchObject({ ok: false });
   expect(

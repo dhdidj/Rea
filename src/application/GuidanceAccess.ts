@@ -15,7 +15,10 @@ import {
 import { AnalysisInputError } from "../domain/analysisErrorCore.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
 import { ArtifactReaderFailure } from "../artifacts/ArtifactReader.js";
-import { RetainedRegularFileCleanupFailure } from "./RegularFileRead.js";
+import {
+  bindRegularFileCleanup,
+  RetainedRegularFileCleanupFailure,
+} from "./RegularFileRead.js";
 import { analysisInputErrorFromIssues } from "../domain/inputIssueProjection.js";
 import { err, ok, type Result } from "../domain/result.js";
 
@@ -73,10 +76,8 @@ const guidanceCleanupFailure = (
       remediationAction:
         "Close REA so it can retry releasing the retained guidance file handle. Do not repeat the request until cleanup completes.",
     },
-  ).bindCleanupResourceOwner(resources);
-  resources.addCloseHook(async () => {
-    if (!resources.hasPending) error.resolveCleanup();
-  });
+  );
+  bindRegularFileCleanup(cause, error);
   return error;
 };
 
@@ -164,6 +165,58 @@ const parseSections = (guide: string, content: string): GuideSection[] => {
 const words = (text: string): string[] => [
   ...new Set(text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []),
 ];
+
+const GENERIC_QUERY_WORDS: ReadonlySet<string> = new Set([
+  "a",
+  "about",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "how",
+  "i",
+  "in",
+  "is",
+  "it",
+  "my",
+  "of",
+  "on",
+  "or",
+  "should",
+  "so",
+  "that",
+  "the",
+  "their",
+  "there",
+  "they",
+  "this",
+  "to",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your",
+]);
 
 const sectionLocator = (
   bundle: GuidanceBundle,
@@ -257,13 +310,21 @@ export const searchGuidanceWithReader = async (
     );
 
   const queryWords = words(parsed.data.query);
+  const specificQueryWords = queryWords.filter(
+    (word) => !GENERIC_QUERY_WORDS.has(word),
+  );
+  const queryWordsToMatch =
+    specificQueryWords.length > 0 ? specificQueryWords : queryWords;
   const ranked = bundle.sections
     .flatMap((section) => {
       const sectionWords = new Set(
         words(`${section.heading}\n${section.content}`),
       );
+      const matchedSpecific = queryWordsToMatch.filter((word) =>
+        sectionWords.has(word),
+      );
+      if (matchedSpecific.length === 0) return [];
       const matched = queryWords.filter((word) => sectionWords.has(word));
-      if (matched.length === 0) return [];
       const headingWords = new Set(words(section.heading));
       const score =
         matched.length +

@@ -68,6 +68,11 @@ it("advertises strict provider-free contracts and returns packaged guide results
     arguments: { locator: "../../outside.md" },
   });
   expect(invalidLocator.isError).toBe(true);
+  const invalidLimit = await client.callTool({
+    name: "search_guidance",
+    arguments: { query: "module", limit: 21 },
+  });
+  expect(invalidLimit.isError).toBe(true);
   const response = await client.callTool({
     name: "search_guidance",
     arguments: { query: "exact JavaScript module" },

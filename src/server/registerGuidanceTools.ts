@@ -6,7 +6,7 @@ import type { ArtifactResourceScope } from "../artifacts/ArtifactResourceScope.j
 import { toolContract } from "../contracts/toolContracts.js";
 import { jsonValueSchema } from "../domain/jsonValue.js";
 import type { EvidenceMcpServer } from "./EvidenceMcpServer.js";
-import { toolRegistrationOptions } from "./toolRegistrationOptions.js";
+import { applicationToolRegistrationOptions } from "./toolRegistrationOptions.js";
 
 /** Register provider-free search and retrieval over the installed guide bundle. */
 export const registerGuidanceTools = (
@@ -16,7 +16,7 @@ export const registerGuidanceTools = (
   const search = toolContract("search_guidance");
   server.registerTool(
     search.name,
-    toolRegistrationOptions(search),
+    applicationToolRegistrationOptions(search),
     async (input) => {
       const result = await searchGuidance(input, resources);
       return server.delivery.toCallToolResult(
@@ -31,7 +31,7 @@ export const registerGuidanceTools = (
   const read = toolContract("read_guidance_section");
   server.registerTool(
     read.name,
-    toolRegistrationOptions(read),
+    applicationToolRegistrationOptions(read),
     async (input) => {
       const result = await readGuidanceSection(input, resources);
       return server.delivery.toCallToolResult(

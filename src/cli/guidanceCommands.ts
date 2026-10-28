@@ -41,7 +41,10 @@ export const registerGuidanceCommands = (
     args: z.object({}),
     options: z
       .object({
-        action: z.enum(["search", "read"]).default("search"),
+        action: z
+          .enum(["search", "read"])
+          .default("search")
+          .describe("Guidance action to perform: search or read"),
         query: searchGuidanceInputSchema.shape.query
           .optional()
           .describe("Required with --action search; natural-language question"),

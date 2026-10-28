@@ -150,6 +150,124 @@ it("preserves independently observed file changes alongside an unknown effect", 
   }
 });
 
+it("preserves proven file additions and removals beside an unrelated unknown effect", () => {
+  const base = emptyCapture();
+  const root = {
+    path: "root_0:.",
+    type: "directory" as const,
+    mode: 0o755,
+    size: 0,
+    sha256: null,
+    symlink_target: null,
+  };
+  const link = {
+    path: "root_0:legacy-link",
+    type: "symlink" as const,
+    mode: 0o777,
+    size: 1,
+    sha256: null,
+    symlink_target: null,
+    symlink_target_hex: "ff",
+  };
+  const file = {
+    path: "root_0:output.txt",
+    type: "file" as const,
+    mode: 0o644,
+    size: 4,
+    sha256: "a".repeat(64),
+    symlink_target: null,
+  };
+  const unknown = {
+    path: link.path,
+    status: "unknown" as const,
+    before: link,
+    after: link,
+    reason: "Target bytes were not retained.",
+  };
+  const created = {
+    path: file.path,
+    status: "created" as const,
+    before: null,
+    after: file,
+  };
+  const make = (withFile: boolean, unobserved: boolean) => {
+    const before = [root, link];
+    const after = withFile ? [...before, file] : before;
+    const effects = withFile ? [unknown, created] : [unknown];
+    return {
+      ...base,
+      files_before: before,
+      files_after: after,
+      filesystem_effects: effects,
+      filesystem_checkpoints: base.filesystem_checkpoints.map((checkpoint) => ({
+        ...checkpoint,
+        files: checkpoint.name === "before" ? before : after,
+        effects: checkpoint.name === "before" ? [] : effects,
+      })),
+      truncation_details: {
+        ...base.truncation_details,
+        filesystem_before: {
+          ...base.truncation_details.filesystem_before,
+          unobserved_subtrees: [],
+        },
+        filesystem_after: {
+          ...base.truncation_details.filesystem_after,
+          unobserved_subtrees: unobserved
+            ? [{ path: root.path, reason: "observer_owned" as const }]
+            : [],
+        },
+      },
+    };
+  };
+  const withFile = make(true, false);
+  const absent = make(false, false);
+  const unobserved = make(false, true);
+  const { unobserved_subtrees: _subtrees, ...legacyCoverage } =
+    absent.truncation_details.filesystem_after;
+  const legacy = {
+    ...absent,
+    truncation_details: {
+      ...absent.truncation_details,
+      filesystem_after: legacyCoverage,
+    },
+  };
+  const traceSpecification = {
+    events: [
+      {
+        id: "before",
+        source: "filesystem" as const,
+        exact: jsonValueSchema.parse(withFile.filesystem_checkpoints[0]),
+        cardinality: { kind: "required" as const },
+      },
+    ],
+    language: {
+      kind: "finite_traces" as const,
+      variants: [{ id: "v", trace: ["before"] }],
+    },
+  };
+  for (const [left, right] of [
+    [withFile, absent],
+    [absent, withFile],
+  ] as const) {
+    for (const options of [undefined, { traceSpecification }])
+      expect(compareFullyObserved(left, right, options)).toMatchObject({
+        filesystem: "changed",
+        status: "changed",
+        first_divergence: { status: "unknown" },
+      });
+  }
+  for (const [left, right] of [
+    [withFile, unobserved],
+    [unobserved, withFile],
+    [withFile, legacy],
+    [legacy, withFile],
+  ] as const)
+    expect(compareFullyObserved(left, right)).toMatchObject({
+      filesystem: "unknown",
+      status: "unknown",
+    });
+});
+
 it.each(PROCESS_COMPARISON_DIMENSIONS)(
   "requires a contradiction aggregate for a contradictory %s dimension",
   (dimension) => {

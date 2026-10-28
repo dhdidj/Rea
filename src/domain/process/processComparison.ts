@@ -170,8 +170,39 @@ const hasUnknownFilesystemEffects = (capture: ProcessCapture): boolean =>
     effects.some(({ status }) => status === "unknown"),
   );
 
-/** Compare only facts present on both sides; missing paths and unknown values
- * cannot prove a change when filesystem effects are incomplete. */
+/** A missing descendant is evidence only under an observed, fully enumerated root. */
+const checkpointProvesAbsence = (
+  capture: ProcessCapture,
+  checkpoint: ProcessCapture["filesystem_checkpoints"][number],
+  path: string,
+  files: ReadonlyMap<string, ProcessCapture["files_after"][number]>,
+): boolean => {
+  const colon = path.indexOf(":");
+  if (colon < 1) return false;
+  const root = `${path.slice(0, colon)}:.`;
+  const coverage =
+    checkpoint.name === "before"
+      ? capture.truncation_details.filesystem_before
+      : checkpoint.name === "after_settlement"
+        ? capture.truncation_details.filesystem_after
+        : undefined;
+  if (
+    coverage === undefined ||
+    coverage.enumeration_truncated ||
+    coverage.unobserved_subtrees === undefined ||
+    files.get(root)?.type !== "directory"
+  )
+    return false;
+  return !coverage.unobserved_subtrees.some(({ path: subtree, reason }) =>
+    subtree === root
+      ? path !== root
+      : path.startsWith(`${subtree}/`) ||
+        path.startsWith(`${subtree}\\`) ||
+        (reason === "observer_owned" && path === subtree),
+  );
+};
+
+/** Compare observed facts independently of unrelated unknown effects. */
 const hasKnownFilesystemDifference = (
   left: ProcessCapture,
   right: ProcessCapture,
@@ -184,7 +215,8 @@ const hasKnownFilesystemDifference = (
     const files = new Map(peer.files.map((file) => [file.path, file]));
     return checkpoint.files.some((file) => {
       const other = files.get(file.path);
-      if (other === undefined) return false;
+      if (other === undefined)
+        return checkpointProvesAbsence(right, peer, file.path, files);
       if (
         file.type !== other.type ||
         file.mode !== other.mode ||
@@ -211,6 +243,17 @@ const hasKnownFilesystemDifference = (
       }
       return false;
     });
+  }) ||
+  right.filesystem_checkpoints.some((checkpoint) => {
+    const peer = left.filesystem_checkpoints.find(
+      ({ name }) => name === checkpoint.name,
+    );
+    if (peer === undefined) return false;
+    const files = new Map(peer.files.map((file) => [file.path, file]));
+    return checkpoint.files.some(
+      ({ path }) =>
+        !files.has(path) && checkpointProvesAbsence(left, peer, path, files),
+    );
   });
 
 type DivergenceDimension = Exclude<

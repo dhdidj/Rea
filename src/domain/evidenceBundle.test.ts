@@ -38,24 +38,6 @@ describe("evidence bundle failure classification", () => {
     if (parsed.ok) return;
     expect(parsed.error.kind).toBe("invalid-bundle");
     expect(parsed.error.cause).toBeInstanceOf(NonCanonicalEvidenceBundleError);
-  });
-
-  it("attributes record-order violations to records, not manifests", () => {
-    const records = ["first", "second"].map((label) =>
-      createEvidence(undefined, provider, {
-        operation: "observe",
-        parameters: { label },
-        result: { label },
-      }),
-    );
-    const canonical = createEvidenceBundle(records);
-    const parsed = safeParseEvidenceBundle({
-      ...canonical,
-      records: [...canonical.records].reverse(),
-    });
-    expect(parsed.ok).toBe(false);
-    if (parsed.ok) return;
-    expect(parsed.error.cause).toBeInstanceOf(NonCanonicalEvidenceBundleError);
     expect((parsed.error.cause as Error).message).toBe(
       "Evidence bundle records are not in canonical order",
     );

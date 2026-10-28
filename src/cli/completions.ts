@@ -151,8 +151,8 @@ export const createCliCompletions = (
         input.length - 1,
         {
           schema: doctor
-            // The launcher consumes this global before doctor parses options.
-            ? MCP_DOCTOR_OPTIONS.extend({ timings: z.boolean().optional() })
+            ? // The launcher consumes this global before doctor parses options.
+              MCP_DOCTOR_OPTIONS.extend({ timings: z.boolean().optional() })
             : standardGlobals(before.length === 0),
           alias: doctor ? MCP_DOCTOR_ALIAS : { help: "h" },
         },

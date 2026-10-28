@@ -9,7 +9,7 @@ import {
 import { INSPECT_ANALYSIS_VIEW_OPERATION } from "../../domain/analysisView/analysisViewErrors.js";
 import { err, ok, type Result } from "../../domain/result.js";
 import type { Evidence } from "../../domain/evidence.js";
-import { safeParseEvidence } from "../../domain/evidenceValidation.js";
+import { safeParseImmutableEvidence } from "../../domain/evidenceValidation.js";
 import { EvidenceFileError } from "../../domain/evidenceErrors.js";
 import { projectInputIssues } from "../../domain/inputIssueProjection.js";
 import { readJsonFile } from "../JsonFiles.js";
@@ -142,7 +142,10 @@ export const readEvidenceFileSource = async (
     !Array.isArray(value) &&
     Object.hasOwn(value, "records")
   ) {
-    const bundle = authenticateEvidenceBundleValue(value, path, { operation });
+    const bundle = authenticateEvidenceBundleValue(value, path, {
+      operation,
+      immutable: true,
+    });
     if (!bundle.ok) return bundle;
     const selected = selectBundleRecord(
       bundle.value.records,
@@ -162,7 +165,7 @@ export const readEvidenceFileSource = async (
     description: "Insufficient heap headroom to authenticate the Evidence file",
   });
   if (!headroom.ok) return headroom;
-  const parsed = safeParseEvidence(value);
+  const parsed = safeParseImmutableEvidence(value);
   if (!parsed.ok)
     return err(
       new EvidenceFileError("read", "wrong-kind", {

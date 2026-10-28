@@ -5,7 +5,7 @@ import {
   type ConfigurationSettingIssue,
 } from "../domain/configurationErrors.js";
 import { err, ok, type Result } from "../domain/result.js";
-import { parseEnvironment } from "./environment.js";
+import { parseEnvironment, type Environment } from "./environment.js";
 import { providerStartupTimeoutSchema } from "./providerStartupTimeout.js";
 import { homeDirectoryFromEnvironment } from "./homeDirectory.js";
 import { DEFAULT_BRIDGE_MAX_REQUEST } from "./bridgeMaxRequestBytes.js";
@@ -95,6 +95,29 @@ export const inspectNativeAnalysisConfiguration = (
   };
 };
 
+/** One shared CLI/MCP selection of an existing project and its program. */
+const ghidraExistingProjectConfig = (
+  env: Pick<
+    Environment,
+    | "REA_GHIDRA_PROJECT_PATH"
+    | "REA_GHIDRA_PROGRAM_NAME"
+    | "REA_GHIDRA_PROGRAM_FOLDER"
+  >,
+): Pick<AppConfig, "ghidraExistingProject"> =>
+  env.REA_GHIDRA_PROJECT_PATH === undefined
+    ? {}
+    : {
+        ghidraExistingProject: {
+          path: env.REA_GHIDRA_PROJECT_PATH,
+          ...(env.REA_GHIDRA_PROGRAM_NAME === undefined
+            ? {}
+            : { programName: env.REA_GHIDRA_PROGRAM_NAME }),
+          ...(env.REA_GHIDRA_PROGRAM_FOLDER === undefined
+            ? {}
+            : { programFolder: env.REA_GHIDRA_PROGRAM_FOLDER }),
+        },
+      };
+
 /** Parse provider configuration and runtime prerequisites at the composition root. */
 export const parseConfig = (
   environment: Readonly<Record<string, string | undefined>>,
@@ -119,16 +142,7 @@ export const parseConfig = (
     ...(env.REA_IDA_MCP_CONFIG === undefined
       ? {}
       : { idaMcpConfigPath: env.REA_IDA_MCP_CONFIG }),
-    ...(env.REA_GHIDRA_PROJECT_PATH === undefined
-      ? {}
-      : {
-          ghidraExistingProject: {
-            path: env.REA_GHIDRA_PROJECT_PATH,
-            ...(env.REA_GHIDRA_PROGRAM_NAME === undefined
-              ? {}
-              : { programName: env.REA_GHIDRA_PROGRAM_NAME }),
-          },
-        }),
+    ...ghidraExistingProjectConfig(env),
     ghidraInstallDir: env.GHIDRA_INSTALL_DIR,
     ghidraJavaHome: env.JAVA_HOME,
     ghidraStartupTimeoutMs: env.REA_GHIDRA_STARTUP_TIMEOUT_MS,

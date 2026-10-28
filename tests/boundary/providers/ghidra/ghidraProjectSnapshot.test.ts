@@ -15,6 +15,7 @@ import { ArtifactResourceScope } from "../../../../src/artifacts/ArtifactResourc
 import {
   copyExistingGhidraProject,
   fingerprintGhidraProject,
+  ghidraProjectCommitmentSchema,
   resolveGhidraProject,
 } from "../../../../src/ghidra/GhidraProjectSnapshot.js";
 import { parseConfig } from "../../../../src/config/parseConfig.js";
@@ -112,6 +113,124 @@ it("parses an opt-in project once for shared CLI/MCP configuration and rejects i
   expect(parseConfig({ REA_GHIDRA_PROGRAM_NAME: "program.elf" }).ok).toBe(
     false,
   );
+});
+
+it("parses a program folder only alongside a project and refuses non-canonical folders", () => {
+  const environment = {
+    REA_GHIDRA_PROJECT_PATH: join(process.cwd(), "existing.gpr"),
+    REA_GHIDRA_PROGRAM_NAME: "program.elf",
+    REA_GHIDRA_PROGRAM_FOLDER: "/firmware/v2",
+  };
+  expect(parseConfig(environment)).toMatchObject({
+    ok: true,
+    value: {
+      ghidraExistingProject: {
+        path: environment.REA_GHIDRA_PROJECT_PATH,
+        programName: "program.elf",
+        programFolder: "/firmware/v2",
+      },
+    },
+  });
+  expect(
+    parseConfig({ REA_GHIDRA_PROGRAM_FOLDER: "/firmware/v2" }),
+  ).toMatchObject({
+    ok: false,
+    error: {
+      settings: [
+        {
+          setting: "REA_GHIDRA_PROGRAM_FOLDER",
+          constraint: "requires REA_GHIDRA_PROJECT_PATH",
+        },
+      ],
+    },
+  });
+  for (const folder of [
+    "/",
+    "firmware",
+    "/firmware/",
+    "/firmware//v2",
+    "/firmware/../other",
+    "/firmware/./v2",
+    "/..",
+    "/firmware/*",
+    "/firmware/v?",
+    "/firmware\\v2",
+    "/ firmware",
+    "/firmware\u0000",
+    "/firmware\nv2",
+  ])
+    expect(
+      parseConfig({ ...environment, REA_GHIDRA_PROGRAM_FOLDER: folder }).ok,
+      folder,
+    ).toBe(false);
+  // The program name stays one name; a path belongs in the folder setting.
+  for (const programName of ["firmware/program.elf", "../program.elf"])
+    expect(
+      parseConfig({ ...environment, REA_GHIDRA_PROGRAM_NAME: programName }).ok,
+    ).toBe(false);
+});
+
+it("commits a folder selection with the same content identity and keeps root profiles unchanged", async () => {
+  const { source } = await fixture();
+  const selection = { path: join(source, "selected.gpr"), programName: "app" };
+  const root = await resolveGhidraProject(
+    selection,
+    { path: "/tmp/app" },
+    resources,
+  );
+  const nested = await resolveGhidraProject(
+    { ...selection, programFolder: "/firmware/v2" },
+    { path: "/tmp/app" },
+    resources,
+  );
+  // A root selection has no folder key, so its committed profile is unchanged.
+  expect(Object.keys(root)).not.toContain("program_folder");
+  expect(nested).toEqual({ ...root, program_folder: "/firmware/v2" });
+  expect(ghidraProjectCommitmentSchema.parse(nested)).toEqual(nested);
+  expect(
+    ghidraProjectCommitmentSchema.safeParse({
+      ...root,
+      program_folder: "/firmware/../v2",
+    }).success,
+  ).toBe(false);
+});
+
+it("reports an invalid program folder at its selection boundary", async () => {
+  const { source } = await fixture();
+  await expect(
+    resolveGhidraProject(
+      { path: join(source, "selected.gpr"), programFolder: "/firmware/../.." },
+      { path: "/tmp/app" },
+      resources,
+    ),
+  ).rejects.toMatchObject({
+    _tag: "ConfigurationError",
+    settings: [{ setting: "REA_GHIDRA_PROGRAM_FOLDER" }],
+  });
+});
+
+it("keeps the copied-content identity check for a folder selection", async () => {
+  const { source, destination } = await fixture();
+  const committed = await resolveGhidraProject(
+    {
+      path: join(source, "selected.gpr"),
+      programName: "app",
+      programFolder: "/firmware",
+    },
+    { path: "/tmp/app" },
+    resources,
+  );
+  await writeFile(join(source, "selected.rep", "data"), "modified program");
+  await expect(
+    copyExistingGhidraProject(committed.project_path, destination, {
+      projectName: committed.project_name,
+      expectedSha256: committed.sha256,
+      resources,
+    }),
+  ).rejects.toMatchObject({
+    _tag: "AnalysisArtifactChangedError",
+    cause: { name: "RegularFileChangedError" },
+  });
 });
 
 it("reports an invalid derived program name at its selection boundary", async () => {

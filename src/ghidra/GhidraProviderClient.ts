@@ -223,7 +223,9 @@ export const createGhidraProviderClient = (input: {
         config.ghidraExistingProject?.path ||
         (config.ghidraExistingProject?.programName !== undefined &&
           config.ghidraExistingProject.programName !==
-            projectProfile.data.program_name)))
+            projectProfile.data.program_name) ||
+        config.ghidraExistingProject?.programFolder !==
+          projectProfile.data.program_folder))
   )
     return err(
       new ProviderAdapterError("ghidra", "open_binary", {
@@ -417,6 +419,9 @@ export const createGhidraProviderClient = (input: {
               projectPath: project.project_path,
               projectName: project.project_name,
               programName: project.program_name,
+              ...(project.program_folder === undefined
+                ? {}
+                : { programFolder: project.program_folder }),
               sha256: project.sha256,
             },
           }),

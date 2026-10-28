@@ -1,4 +1,5 @@
 import { copyExistingGhidraProject } from "./GhidraProjectSnapshot.js";
+import { ghidraProgramFolderSchema } from "../config/ghidraExistingProject.js";
 import type { ArtifactResourceScope } from "../artifacts/ArtifactResourceScope.js";
 import { GHIDRA_BRIDGE_SOURCES } from "./GhidraBridgeSources.js";
 import {
@@ -210,6 +211,8 @@ export interface GhidraExistingProject {
   readonly sha256?: string;
   /** Imported program name selected with -process. */
   readonly programName: string;
+  /** Non-root project folder holding the program; absent selects the root. */
+  readonly programFolder?: string;
 }
 
 /** Static coordinates for an extracted Ghidra release and packaged script. */
@@ -758,7 +761,7 @@ export interface GhidraHeadlessArgumentOptions {
   /** Open this pre-imported program with -process instead of importing. */
   readonly existingProject?: Pick<
     GhidraExistingProject,
-    "programName" | "projectName"
+    "programName" | "projectName" | "programFolder"
   >;
   readonly bridgeScriptPath: string;
   readonly descriptorPath: string;
@@ -816,6 +819,13 @@ const validateExistingProjectOptions = (
     if (existing.programName.trim() === "")
       throw new Error(
         "An existing Ghidra project requires a program name for -process.",
+      );
+    if (
+      existing.programFolder !== undefined &&
+      !ghidraProgramFolderSchema.safeParse(existing.programFolder).success
+    )
+      throw new Error(
+        "An existing Ghidra project folder must be one canonical non-root project folder such as /firmware/v2.",
       );
     if (options.psp === true)
       throw new Error(
@@ -917,7 +927,9 @@ export const ghidraHeadlessArguments = (
     );
   return [
     options.projectRoot,
-    existing?.projectName ?? "rea-project",
+    // analyzeHeadless reads <project_name>[/<folder_path>]; -process then
+    // selects one program inside that folder of the owned copy.
+    `${existing?.projectName ?? "rea-project"}${existing?.programFolder ?? ""}`,
     ...(existing === undefined
       ? [
           "-import",

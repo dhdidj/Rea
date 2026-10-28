@@ -25,7 +25,10 @@ import {
 import { ConfigurationError } from "../domain/configurationErrors.js";
 import { compareUnicodeCodePoints } from "../domain/unicodeCodePointOrder.js";
 import type { GhidraProjectSelection } from "../config/ghidraExistingProject.js";
-import { ghidraProgramNameSchema } from "../config/ghidraExistingProject.js";
+import {
+  ghidraProgramFolderSchema,
+  ghidraProgramNameSchema,
+} from "../config/ghidraExistingProject.js";
 
 /** Classify file cancellation/cleanup before the generic provider boundary. */
 const projectFileOperation = async <Value>(
@@ -50,6 +53,8 @@ export const ghidraProjectCommitmentSchema = z.strictObject({
     .min(1)
     .refine((name) => basename(name) === name),
   program_name: ghidraProgramNameSchema,
+  // Absent for the project root, so root selections keep their profile digest.
+  program_folder: ghidraProgramFolderSchema.optional(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/u),
 });
 export type GhidraProjectCommitment = z.infer<
@@ -191,11 +196,21 @@ export const resolveGhidraProject = async (
           "REA_GHIDRA_PROGRAM_NAME",
         );
       const programName = program.data;
+      const folder =
+        selection.programFolder === undefined
+          ? undefined
+          : ghidraProgramFolderSchema.safeParse(selection.programFolder);
+      if (folder?.success === false)
+        throw selectionFailure(
+          folder.error.message,
+          "REA_GHIDRA_PROGRAM_FOLDER",
+        );
       return {
         configured_path: selection.path,
         project_path: projectPath,
         project_name: projectName,
         program_name: programName,
+        ...(folder === undefined ? {} : { program_folder: folder.data }),
         sha256: await fingerprintGhidraProject(
           projectPath,
           projectName,

@@ -1,5 +1,6 @@
 import {
   ghidraProjectPathSchema,
+  ghidraProgramFolderSchema,
   ghidraProgramNameSchema,
 } from "./ghidraExistingProject.js";
 import { z } from "zod";
@@ -104,6 +105,7 @@ const environmentSchema = z.object({
   REA_GHIDRA_DECOMPILE_TIMEOUT_SECONDS: ghidraDecompileTimeoutSchema.optional(),
   REA_GHIDRA_PROJECT_PATH: ghidraProjectPathSchema.optional(),
   REA_GHIDRA_PROGRAM_NAME: ghidraProgramNameSchema.optional(),
+  REA_GHIDRA_PROGRAM_FOLDER: ghidraProgramFolderSchema.optional(),
   REA_GHIDRA_LANGUAGE_ID: ghidraLanguageIdSchema.optional(),
   REA_GHIDRA_COMPILER_SPEC_ID: ghidraCompilerSpecIdSchema.optional(),
   REA_GHIDRA_DISABLED_ANALYZERS: ghidraDisabledAnalyzersSchema.optional(),
@@ -226,10 +228,11 @@ export const parseEnvironment = (
   const project = env.REA_GHIDRA_PROJECT_PATH;
   const incompatible =
     project === undefined
-      ? env.REA_GHIDRA_PROGRAM_NAME === undefined ||
-        unresolvedSettings.has("REA_GHIDRA_PROJECT_PATH")
+      ? unresolvedSettings.has("REA_GHIDRA_PROJECT_PATH")
         ? []
-        : ["REA_GHIDRA_PROGRAM_NAME"]
+        : (
+            ["REA_GHIDRA_PROGRAM_NAME", "REA_GHIDRA_PROGRAM_FOLDER"] as const
+          ).filter((setting) => env[setting] !== undefined)
       : [
           "REA_GHIDRA_LANGUAGE_ID",
           "REA_GHIDRA_COMPILER_SPEC_ID",

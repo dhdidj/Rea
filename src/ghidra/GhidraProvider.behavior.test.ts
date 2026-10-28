@@ -4692,6 +4692,78 @@ it("keeps saved project reports as shared historical Evidence without applying f
   );
 });
 
+it("commits a selected project folder and refuses a profile resolved for another folder", async () => {
+  const root = await mkdtemp(join(tmpdir(), "rea-folder-project-"));
+  await mkdir(join(root, "nested.rep"));
+  await writeFile(join(root, "nested.gpr"), "marker");
+  const selection = {
+    REA_GHIDRA_PROJECT_PATH: join(root, "nested.gpr"),
+    REA_GHIDRA_PROGRAM_NAME: "app",
+  };
+  const launchers: GhidraHeadlessLauncher[] = [];
+  const factory: GhidraProviderClientFactory = (options) => {
+    launchers.push(options.launcher as GhidraHeadlessLauncher);
+    return {
+      start: async () =>
+        ok({
+          ...sessionInfo(),
+          read_only: true,
+          existing_project: true as const,
+          analysis_complete: null,
+          capabilities: GHIDRA_SESSION_CAPABILITIES.filter(
+            (name) => !GHIDRA_MUTATING_OPERATIONS.has(name),
+          ),
+        }),
+      callTool: async () => ok([]),
+      close: async () => ok(null),
+    };
+  };
+  const nested = provider(installationHost(), factory, {
+    ...selection,
+    REA_GHIDRA_PROGRAM_FOLDER: "/firmware/v2",
+  });
+  const rootOnly = provider(installationHost(), factory, selection);
+  onTestFinished(async () => {
+    await nested.closeOwnedResources();
+    await rootOnly.closeOwnedResources();
+    await rm(root, { recursive: true, force: true });
+  });
+  const target = executableTarget("elf", "x86_64");
+  const resolved = await nested.resolveAnalysisProfile(target);
+  if (!resolved.ok || resolved.value.profile === null)
+    throw new Error("expected existing profile");
+  const profile = resolved.value.profile;
+  expect(profile.parameters.existing_project).toMatchObject({
+    project_name: "nested",
+    program_name: "app",
+    program_folder: "/firmware/v2",
+  });
+  const client = nested.createClient(target, profile);
+  onTestFinished(async () => {
+    await client.close();
+  });
+  const listed = await client.execute("list_procedures", {});
+  if (!listed.ok) throw listed.error;
+  expect(launchers[0]?.options.existingProject).toMatchObject({
+    projectName: "nested",
+    programName: "app",
+    programFolder: "/firmware/v2",
+  });
+  // The folder is part of the committed selection: a session configured for
+  // the root must not open the profile resolved for /firmware/v2.
+  const mismatched = rootOnly.createClient(target, profile);
+  onTestFinished(async () => {
+    await mismatched.close();
+  });
+  const refused = await mismatched.execute("list_procedures", {});
+  expect(refused.ok).toBe(false);
+  if (refused.ok) throw new Error("expected a folder mismatch refusal");
+  expect(JSON.stringify(refused.error.diagnostics)).toMatch(
+    /fresh analysis profile/u,
+  );
+  expect(launchers).toHaveLength(1);
+});
+
 it.each(["search_procedures", "search_strings"] as const)(
   "%s applies shared folding after validation and preserves native source rows",
   async (operation) => {

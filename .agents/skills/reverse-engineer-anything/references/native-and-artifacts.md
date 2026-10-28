@@ -350,8 +350,9 @@ detail, describe possible providers. Top-level session capabilities describe the
 ## Reuse caller-selected Ghidra analysis
 
 When the caller supplies an expanded project, configure `REA_GHIDRA_PROJECT_PATH`
-(the `.gpr` marker) and optionally `REA_GHIDRA_PROGRAM_NAME` (one root program),
-then restart/reconnect before `open_binary`. CLI uses the same configuration.
+(the `.gpr` marker) and optionally `REA_GHIDRA_PROGRAM_NAME` (one program) and
+`REA_GHIDRA_PROGRAM_FOLDER` (its project folder, such as `/firmware/v2`; omit for
+the root), then restart/reconnect before `open_binary`. CLI uses the same configuration.
 REA opens only a fingerprint-bound owned copy with `-process -noanalysis -readOnly`;
 original project files are not opened by the engine or saved. Database edits,
 import overrides and repair scripts are unavailable in this mode. Treat original

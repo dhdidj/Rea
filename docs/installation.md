@@ -1340,13 +1340,18 @@ For repeated investigations, select an expanded local project marker with
 `REA_GHIDRA_PROJECT_PATH=/absolute/projects/app-analysis.gpr`. Both CLI and MCP
 use this shared selection. `REA_GHIDRA_PROGRAM_NAME` selects one exact program
 in the project root; when omitted it defaults to the selected target's filename.
-Paths, globs and command flags are not program names. The matching `.rep`
-directory must be present; restore `.grez` archives with Ghidra first.
+When the program lives in a project folder, set `REA_GHIDRA_PROGRAM_FOLDER` to
+that folder's absolute project path, for example `/firmware/v2`; omit it for the
+root. Paths, globs and command flags are not program names, and folders refuse
+wildcards, backslashes, trailing slashes and empty or `.`/`..` segments. The
+matching `.rep` directory must be present; restore `.grez` archives with Ghidra
+first.
 
 ```bash
 export REA_ANALYSIS_PROVIDER=ghidra
 export REA_GHIDRA_PROJECT_PATH=/absolute/projects/app-analysis.gpr
 export REA_GHIDRA_PROGRAM_NAME=app
+export REA_GHIDRA_PROGRAM_FOLDER=/firmware/v2   # optional; omit for the root
 rea decompile /absolute/target/app --procedure entry --provider ghidra --json
 ```
 
@@ -1359,16 +1364,19 @@ raw/DOS/DOL and special pinned-language import profiles require fresh import.
 
 REA fingerprints only the selected `.gpr`/`.rep` pair, copies it into its owned
 runtime, verifies the copied content against the committed analysis profile,
-and runs `-process <program> -noanalysis -readOnly`. Ghidra never opens or saves
-the original database; REA reads selected files only for fingerprinting and copying.
+and runs `-process <program> -noanalysis -readOnly` (with a folder, the copy is
+opened as `<project>/<folder>` so `-process` still names one program). Ghidra
+never opens or saves the original database; REA reads selected files only for
+fingerprinting and copying. Folder selection does not narrow the copy: the whole
+selected project is fingerprinted and copied either way.
 This mode does not copy unrelated sibling projects, rerun repair scripts, or
 admit bridge database edits. Cleanup removes the owned copy.
 The bridge checks the program's recorded import SHA-256 against the admitted
 target digest; mismatches and project changes fail explicitly. Reopen the target
 to resolve a new profile after intentionally changing the source project.
 
-The profile records the caller path, resolved project/name, program and content
-fingerprint. Original analysis settings and completeness remain **unknown**;
+The profile records the caller path, resolved project/name, program, any
+selected folder and content fingerprint. Original analysis settings and completeness remain **unknown**;
 prior annotations or edits are caller-project state, not fresh REA discoveries.
 A matching recorded import digest does not claim that the database is unedited.
 Saved REA seed/analyzer reports remain historical facts in retained source Evidence;

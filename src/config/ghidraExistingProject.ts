@@ -11,7 +11,7 @@ export const ghidraProjectPathSchema = z
     "Select an expanded .gpr project marker; restore .grez archives first",
   );
 
-/** Headless -process accepts globs and flags; this workflow selects one root program. */
+/** Headless -process accepts globs and flags; this workflow selects one program in one folder. */
 export const ghidraProgramNameSchema = z
   .string()
   .min(1)
@@ -20,10 +20,41 @@ export const ghidraProgramNameSchema = z
       name.trim().length > 0 &&
       !name.startsWith("-") &&
       !/[\\/\0*?]/u.test(name),
-    "Select one exact program name in the project root, without paths, flags or wildcards",
+    "Select one exact program name in the selected project folder, without paths, flags or wildcards",
+  );
+
+const MAX_GHIDRA_PROGRAM_FOLDER_LENGTH = 4096;
+
+/**
+ * A non-root project folder such as `/firmware/v2`. analyzeHeadless reads it
+ * from `<project_name>/<folder_path>`; one spelling per folder keeps the
+ * committed profile canonical, so the root is selected by omitting the folder.
+ */
+export const ghidraProgramFolderSchema = z
+  .string()
+  .min(2)
+  .max(MAX_GHIDRA_PROGRAM_FOLDER_LENGTH)
+  .refine(
+    (folder) =>
+      folder.startsWith("/") &&
+      // Backslashes become separators and * ? are patterns in analyzeHeadless.
+      !/[\\*?\p{Cc}]/u.test(folder) &&
+      folder
+        .slice(1)
+        .split("/")
+        .every(
+          (segment) =>
+            segment.length > 0 &&
+            segment !== "." &&
+            segment !== ".." &&
+            segment.trim() === segment,
+        ),
+    "Select one absolute project folder such as /firmware/v2, without a trailing slash, wildcards, backslashes, or empty, dot or padded segments; omit the folder for the project root",
   );
 
 export interface GhidraProjectSelection {
   readonly path: string;
   readonly programName?: string;
+  /** Non-root project folder holding the program; absent selects the root. */
+  readonly programFolder?: string;
 }

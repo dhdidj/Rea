@@ -629,6 +629,41 @@ describe("Ghidra existing project", () => {
       }),
     ).toThrow(/program name/u);
   });
+
+  it("selects a program inside a project folder of the owned copy", () => {
+    const arguments_ = ghidraHeadlessArguments({
+      ...base,
+      existingProject: {
+        projectName: "selected",
+        programName: "game.exe",
+        programFolder: "/firmware/v2",
+      },
+    });
+    // analyzeHeadless reads <project_name>/<folder_path>; -process stays one name.
+    expect(arguments_.slice(0, 6)).toEqual([
+      "/tmp/project",
+      "selected/firmware/v2",
+      "-process",
+      "game.exe",
+      "-noanalysis",
+      "-readOnly",
+    ]);
+    expect(arguments_).not.toContain("-import");
+    expect(arguments_).not.toContain("-deleteProject");
+    expect(arguments_).not.toContain("-recursive");
+  });
+
+  it.each(["/", "firmware", "/firmware/", "/firmware/../..", "/fw/*"])(
+    "rejects the non-canonical project folder %j before building arguments",
+    (programFolder) => {
+      expect(() =>
+        ghidraHeadlessArguments({
+          ...base,
+          existingProject: { programName: "game.exe", programFolder },
+        }),
+      ).toThrow(/project folder/u);
+    },
+  );
 });
 
 const fakeSpawnedProcess = (runId: string): SpawnedOwnedProviderProcess => {

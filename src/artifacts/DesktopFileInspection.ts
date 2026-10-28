@@ -22,6 +22,10 @@ import { ManagedReaderFailure } from "../dotnet/ManagedReaderFailure.js";
 import { ArtifactReaderFailure } from "./ArtifactReader.js";
 import { abortIfNeeded } from "./ArtifactHash.js";
 import { hasMachoMagic } from "../domain/apple/machoContainer.js";
+import {
+  hasUnityFsHeader,
+  readUnityFsHeaderFacts,
+} from "../domain/unityfsFormat.js";
 
 export interface DesktopReadBudget {
   bytes: number;
@@ -135,6 +139,23 @@ export const inspectDesktopFile = async (
       },
     });
   }
+  if (prefix.length >= 20 && hasUnityFsHeader(prefix)) {
+    const unityfsHeader = readUnityFsHeaderFacts(prefix);
+    if (unityfsHeader !== undefined)
+      fact({
+        kind: "unityfs-header",
+        offset: 0,
+        value: {
+          format_version: unityfsHeader.formatVersion,
+          engine_version: unityfsHeader.engineVersion,
+          flags: unityfsHeader.flags,
+          declared_size:
+            unityfsHeader.declaredSize <= BigInt(Number.MAX_SAFE_INTEGER)
+              ? Number(unityfsHeader.declaredSize)
+              : null,
+        },
+      });
+  }
   if (
     prefix.length >= 16 &&
     prefix.toString("latin1", 0, 4) === "FORM" &&
@@ -229,7 +250,9 @@ const inspectPeFile = async (
   if (observed.state !== "signature-needed" && observed.state !== "declared")
     return;
   const peOffset = observed.offset;
-  const coff = await read(peOffset, 24);
+  // The MZ pointer requests signature evidence, not a PE/COFF extent. Preserve
+  // short NE/LE/LX signatures and let the COFF owner diagnose truncated PE.
+  const coff = await read(peOffset, Math.min(24, size - peOffset));
   const confirmed = observeMzWindowsHeader(prefix, size, {
     offset: peOffset,
     bytes: coff,

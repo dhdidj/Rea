@@ -301,6 +301,15 @@ unknown metadata. Missing omission counts remain null. Summary output carries
 every matching record; actual transport admission still applies. Omitted
 `detail` preserves complete canonical bundle delivery; filters require summary.
 
+Residual-unknown mutations reject missing Evidence or unknown references and
+unproven verified resolutions with nonretryable `invalid_request` diagnostics.
+`details.constraint` carries the validator's `kind`, owning `unknown_id`, and
+missing `evidence_id` or `related_unknown_id` where applicable. Correct the
+reported input or supply the required retained Evidence; unchanged retries do
+not repair these constraints. Rejected mutations leave retained state unchanged.
+Revision conflicts remain retryable `revision_conflict`; broken revision histories
+remain `evidence_integrity_mismatch`.
+
 `list_unknowns` returns every matching current head by default. For a smaller
 inline response, supply `offset` and `limit`, then follow `next_offset` until it
 is null. `total` counts all matching heads; each page preserves complete records
@@ -1248,10 +1257,21 @@ failures for such entries name this cause and the operation to rerun with
 Advertised input and output schemas contain no reachable recursive references.
 Input schemas inline repeated definitions before applying the selected
 presentation profile. Both `full` and `compact` start from this self-contained
-projection; output schemas can share schema-local definitions. Full inputs
-retain nested fields, descriptions and valid literal examples. The compatibility
+projection; output schemas can share schema-local definitions. Analyst-authored
+full inputs retain nested fields, descriptions and valid literal examples. The compatibility
 projections below can relax advertised constraints; canonical runtime validation
 still enforces the complete input contract.
+
+`compare_web_captures` declares its complete producer observations as object
+operands instead of repeating their full output schemas in the input catalog.
+Pass the original `inspect_web_page` normalized result in `before.inspection`
+and `after.inspection`, optional complete `discover_webmcp_tools` results in
+`webmcp`, or complete `capture_browser_scenario` results in the scenario fields.
+Do not construct partial observations from the abbreviated declaration: the
+server still validates every canonical field before comparison. Input groups
+and analyst-authored normalization rules remain explicit. This presentation
+changes no capture bytes, identity, completeness, or comparison semantics and
+does not reduce `inspect_analysis_view` selectors or other tools' declarations.
 
 When a host forwards input schemas to the model, their examples consume context.
 REA's advertised examples therefore never copy complete producer Evidence.

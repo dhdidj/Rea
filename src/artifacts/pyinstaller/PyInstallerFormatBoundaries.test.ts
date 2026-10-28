@@ -47,6 +47,18 @@ it("rejects a CArchive TOC name without its required NUL terminator", () => {
   });
 });
 
+it("accepts a CArchive TOC name with a NUL terminator and zero padding", () => {
+  const toc = Buffer.alloc(32);
+  toc.writeUInt32BE(toc.length, 0);
+  toc[17] = "x".charCodeAt(0);
+  toc.write("member", 18, "ascii");
+
+  expect(parseCArchiveToc(toc)).toMatchObject({
+    ok: true,
+    value: [{ name: "member", typeCode: "x", role: "other" }],
+  });
+});
+
 it("rejects a CArchive TOC name with non-NUL padding", () => {
   const toc = Buffer.alloc(32);
   toc.writeUInt32BE(toc.length, 0);

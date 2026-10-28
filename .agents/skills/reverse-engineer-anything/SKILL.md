@@ -1,8 +1,8 @@
 ---
 name: reverse-engineer-anything
-description: Reverse engineer native, managed, Electron/JavaScript, packaged, firmware, and browser targets with REA. Use shipped-artifact or requested runtime evidence to explain features, compare versions, decompile code, or guide a reconstruction. Skip REA for ordinary source-repository architecture analysis.
+description: Reverse engineer native, managed, Electron/JavaScript, packaged, firmware, and browser targets with REA, and build agent environments (AgentEnv bundles) of web applications from a live instance or a capture. Use shipped-artifact or requested runtime evidence to explain features, compare versions, decompile code, or guide a reconstruction. Skip REA for ordinary source-repository architecture analysis.
 metadata:
-  version: "46"
+  version: "53"
 ---
 
 # REA
@@ -17,6 +17,9 @@ readiness or provider commands.
 
 Installing this skill supplies instructions; it does not register the REA MCP
 server, install analysis engines, or add tools to an already-running agent.
+The exception is a Claude Code or Codex plugin install: the plugin bundles
+this skill and registers its own `rea` server, outside the state that
+`rea setup` and `rea doctor` manage.
 
 If REA tools are available and their registration is not known to be stale,
 proceed directly to the target. Do not run diagnostics or setup before every
@@ -37,37 +40,18 @@ repeat or known not to have started. If it may already have changed the
 target, or it fails again, tell the user and ask them to restart the MCP
 client. If REA could not start its connection, retry once, then tell the user
 and ask them to restart the MCP client. Do not retry a startup failure that
-returns the same unchanged result. Run `rea doctor` when REA could not start
+returns the same unchanged result. For plugin installs, follow
+[plugin recovery](references/connection-and-recovery.md#rea-installed-as-a-client-plugin).
+For setup-owned registrations, run `rea doctor` when REA could not start
 or tools stay missing after that restart. For `cleanup_incomplete`, a retryable
 capacity limit, or `configuration_invalid`, follow the recovery guide's ladder
 before asking for a restart. Read that guide before a second repair attempt.
 
-1. Diagnose without changing REA or client configuration. `npx` may download
-   the package and write to npm's cache. For Codex, run
-   `npx -y rea-agents@latest doctor --client codex --json`. Substitute the current
-   supported client: `claude_code`, `claude_desktop`, `codex`, `cursor`,
-   `gemini_cli`, `windsurf`, `devin`, `opencode`, `antigravity`, `copilot_cli`,
-   `commandcode`, `vscode`, `grok_build`, `omp`, or `grok_bot`. `grok_bot` has no local
-   file registration: doctor reports the Grok Bot chat step, and setup does not
-   write `mcp.json`. If the client is unknown, use `doctor --json` and
-   inspect its registration results before choosing a setup scope.
-2. Distinguish the reason. Missing, malformed, or stale registration needs a
-   scoped configuration repair. An aligned registration with no tools in the
-   active session needs a restart/reconnection; doctor cannot prove that the
-   current agent has connected. A missing provider affects only tasks requiring
-   that provider: static JavaScript inspection needs neither Hopper nor Ghidra,
-   and Android inspection has separate bring-your-own JADX/Java prerequisites.
-3. For a configuration repair, prepare the read-only plan:
-   `npx -y rea-agents@latest setup --client codex --dry-run --json`.
-   Use the current client's ID, show its exact proposed paths, backups, and
-   changes, and obtain approval before setup writes configuration or installs
-   Hopper. Setup normally installs the matching bundled skill too; include that
-   replacement in the reviewed plan. After approval, apply the same scope with
-   `npx -y rea-agents@latest setup --client codex --yes`. Add `--install-hopper`
-   only if that separate installation was needed and explicitly approved.
-4. Restart/reconnect the affected agent. Verify that REA tools actually appear
-   in the session, then resume the original investigation. If they remain
-   absent, inspect the client's MCP launch error rather than repeating setup.
+Choose the installation owner before repairing registration. Plugin installs use
+[plugin recovery](references/connection-and-recovery.md#rea-installed-as-a-client-plugin);
+only setup-owned registrations use the guide's
+[registration repair plan](references/connection-and-recovery.md#repair-registration-when-needed).
+A plugin-only doctor result of `missing` does not call for `rea setup`.
 
 REA setup never installs or upgrades Node.js, npm, Homebrew, Java, Ghidra, IDA,
 JADX, Kuna, Binwalk, or Unblob. Use existing prerequisites; do not install unrelated
@@ -86,7 +70,7 @@ returns the Evidence record directly. This fallback does not establish that
 MCP is configured. Native CLI tasks still require their selected engine.
 Prefer an existing `rea` CLI. When none is installed and REA package acquisition
 is within the authorized scope, use `npx -y rea-agents@latest` in its place.
-Configuration repair starts with a read-only setup plan; show paths, backups and
+For setup-owned registration, configuration repair starts with a read-only setup plan; show paths, backups and
 skill replacement before applying authorized changes. Preserve existing approval
 and target-execution boundaries.
 
@@ -133,6 +117,9 @@ explicit path or endpoint and do not need it.
   `capture_browser_scenario` with declared actions. See
   [runtime observation](references/runtime-observation.md) for connect/launch
   and the focused follow-up browser tools.
+- Agent environment (AgentEnv bundle) of a web application: read
+  [environments](references/environments.md) before recording; it records with
+  `capture_browser_scenario` and writes the bundle with `export_environment_bundle`.
 - Fiddler Everywhere traffic or a native `.saz` capture: read the
   [Fiddler workflow](references/runtime-observation.md#fiddler-everywhere-traffic-debugging).
   Inspect saved SAZ with `inspect_web_network_capture` and `format: "saz"`;
@@ -259,6 +246,14 @@ explicit path or endpoint and do not need it.
   proof the image never imported APIs through another table. Bound snapshots
   and loaded IAT contents remain unobserved. See the
   [PE import guide](https://github.com/morluto/rea/blob/main/docs/pe-imports.md).
+- PE TLS callbacks and load configuration: `inspect_pe_load_config` with the
+  explicit local PE32/PE32+ file. This built-in target-free inspection requires
+  no Windows SDK. Preserve callback VAs as strings with their RVA, file offset
+  and section, and the size-covered security cookie, SafeSEH, CFG,
+  EH-continuation and XFG fields. Guard-flag mitigation claims are inferred
+  linker declarations, not proof of enforcement. A missing directory is observed
+  absence of that declaration. See the
+  [PE load configuration guide](https://github.com/morluto/rea/blob/main/docs/pe-load-config.md).
 - ELF note tables: `inspect_elf_notes` with the explicit local ELF32/ELF64
   file. This built-in target-free inspection requires no disassembler. Preserve
   PT_NOTE and SHT_NOTE ranges, owners, types, descriptor SHA-256, and GNU
@@ -273,6 +268,16 @@ explicit path or endpoint and do not need it.
   body; other types, including `"288"` stackshots, return no crash result.
   Opened Mach-O and dSYM UUID joins remain unobserved. See the
   [Apple IPS guide](https://github.com/morluto/rea/blob/main/docs/apple-ips.md).
+- Linux kernel module metadata: `inspect_kernel_module` with the explicit local
+  ELF32/ELF64 relocatable file. This built-in target-free inspection requires
+  no Linux host or `modinfo`. Preserve `.modinfo` key order and duplicate keys,
+  `__versions` CRC hex, section file ranges, and the appended signature
+  trailer's PKCS#7 SHA-256. A missing section is observed absence when section
+  names are known, not proof the module never carried that metadata.
+  `struct module` is not decoded. The signature is not validated. gzip, xz, and
+  zstd containers are unsupported; decompress into a separate file with an
+  external codec utility, then inspect the decompressed `ET_REL` image. See the
+  [kernel module guide](https://github.com/morluto/rea/blob/main/docs/kernel-modules.md).
 - CPython 3.7–3.13 `.pyc` header, nested marshal code objects and bytecode
   identity: `inspect_python_pyc` with the explicit local file. This built-in
   target-free inspection requires no Python installation. Preserve magic,
@@ -323,6 +328,11 @@ leaves its database open. The modern headless profile creates and closes an
 owned private database without saving. Installation and registration reuse
 [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp); see the
 [IDA provider guide](https://github.com/morluto/rea/blob/main/docs/ida-provider.md).
+For migration to the separate native IDA MCP plugin, follow the guide's
+[legacy attached migration](https://github.com/morluto/rea/blob/main/docs/ida-provider.md#migrate-a-legacy-attached-registration).
+Replace the upstream registration explicitly; modern mrexodia tools are not the
+native profile. Native attachment preserves the database but does not provide
+direct callers; check session availability and the guide's verification limits.
 Proceed directly to `analyze_function`, pseudocode, or function/string searches
 after opening; IDA does not supply `binary_overview`. Consult session availability
 when composing broader workflows. Modern direct callers and unsupported dossier
@@ -353,18 +363,23 @@ native target whose analysis tool operates on the active target. Do not call an
 unadvertised tool; inspect `binary_session` with `{}` and its
 `result.tool_availability` for availability reasons and remediation. Expand each
 group's `names` into entries, inheriting the inventory-level client requirements
-unless the group overrides them. In its closed effect and annotation vocabularies,
-listed flags are true and omitted known flags are false. The grouped name union
-is the complete tool inventory; use `tools/list` for canonical tool schemas.
-Provider candidate facts describe possible providers, while top-level session
-capabilities describe the current route and `analysis_provider_binding` names the
-selected provider. Do not treat those scopes as interchangeable.
+unless the group overrides them. The grouped name union is the complete tool
+inventory; use `tools/list` for canonical tool schemas. The default summary keeps
+each provider candidate's availability and target-support status, code and
+reason; `omitted_fields` lists what it leaves out. Request `{"detail": "complete"}`
+only when you need provider diagnostics, candidate capability sets, or tool
+surface, effect and annotation flags; in those closed flag vocabularies, listed
+flags are true and omitted known flags are false. Provider candidate facts
+describe possible providers, while top-level session capabilities describe the
+current route and `analysis_provider_binding` names the selected provider. Do
+not treat those scopes as interchangeable.
 
 For a Ghidra startup timeout on a large native target, follow
 [deadline recovery](references/native-and-artifacts.md#ghidra-startup-deadline-recovery)
 before abandoning deep analysis or repeating the same cold import. The default
-330 seconds is configurable; changing the server's environment requires a new
-REA process.
+330 seconds can be changed for new startup attempts through
+`update_analysis_settings` using `ghidra.startup_timeout_ms`. Changing the
+server's launch environment instead requires a new REA process.
 
 ## Work summary-first
 
@@ -471,6 +486,9 @@ as complete while required questions remain open.
   [references/runtime-observation.md](references/runtime-observation.md)
 - Evidence paging, comparisons, residual unknowns, and verification:
   [references/evidence-workflows.md](references/evidence-workflows.md)
+- Agent environments (AgentEnv bundles) of a web application, recorded from
+  a live instance or a HAR:
+  [references/environments.md](references/environments.md)
 
 ## Finish the task
 

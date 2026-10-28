@@ -33,6 +33,10 @@ import {
   searchGuidanceInputSchema,
   searchGuidanceOutputSchema,
 } from "./guidanceContracts.js";
+import {
+  guidedWorkflowsInputSchema,
+  guidedWorkflowsOutputSchema,
+} from "./guidedWorkflowSchemas.js";
 import { evidenceResultOf } from "./toolOutputSchemaPrimitives.js";
 import {
   JAVASCRIPT_APPLICATION_VERSION_COMPARISON_EXAMPLE,
@@ -87,6 +91,29 @@ export const APPLICATION_TOOL_CONTRACTS = [
       {
         title: "Find exact JavaScript module guidance",
         input: { query: "exact JavaScript module" },
+      },
+    ],
+  },
+  {
+    name: "guided_workflows",
+    ...toolContractMetadata("guided_workflows"),
+    description:
+      "List or render REA's existing guided workflows. Rendering returns guidance only; it does not inspect targets, start analysis, or change session state.",
+    kind: "application",
+    inputSchema: guidedWorkflowsInputSchema,
+    outputSchema: guidedWorkflowsOutputSchema,
+    examples: [
+      {
+        title: "List the available guided workflows",
+        input: { action: "list" },
+      },
+      {
+        title: "Render feature investigation guidance",
+        input: {
+          action: "render",
+          workflow_id: "investigate_feature",
+          arguments: { feature: "offline search" },
+        },
       },
     ],
   },

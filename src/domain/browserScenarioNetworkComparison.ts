@@ -3,6 +3,7 @@ import type { RetainedBrowserScenarioCapture } from "./browserScenarioCapture.js
 import type { BrowserScenarioNormalizationRule } from "./browserScenarioDiffValues.js";
 import { digestCanonicalValue } from "./canonicalDigest.js";
 import { normalizeScenarioValue } from "./browserScenarioNormalization.js";
+import { indexBrowserScenarioTransactions } from "./browserScenarioTransactions.js";
 
 /** Numeric links are temporary local indices, never durable transaction identity. */
 export const scenarioNetworkTransactionSchema = z.strictObject({
@@ -18,12 +19,17 @@ export type ScenarioNetworkTransaction = z.infer<
 export const scenarioNetworkTransactions = (
   capture: RetainedBrowserScenarioCapture,
 ): ScenarioNetworkTransaction[] => {
+  const { requestCounts } = indexBrowserScenarioTransactions(
+    capture.events.items,
+  );
   const sourceSteps = new Map(
     capture.events.items.map((event) => [event.sequence, event.step_index]),
   );
   const requests = new Map(
     capture.events.items.flatMap((event) =>
-      event.kind === "request" ? [[event.transaction_id, event]] : [],
+      event.kind === "request" && requestCounts.get(event.transaction_id) === 1
+        ? [[event.transaction_id, event]]
+        : [],
     ),
   );
   const grouped = new Map<
@@ -65,7 +71,7 @@ export const scenarioNetworkTransactions = (
         redirected_from_transaction_state: _state,
         ...network
       } = event;
-      evidence = network;
+      evidence = withoutRequestTiming(network);
       predecessor =
         request === undefined ? parent : request.redirected_from_transaction_id;
       predecessorState =
@@ -135,6 +141,11 @@ export const scenarioNetworkCoverageReason = (
   capture: RetainedBrowserScenarioCapture,
   nodes = scenarioNetworkTransactions(capture),
 ): string | undefined => {
+  const { requestCounts } = indexBrowserScenarioTransactions(
+    capture.events.items,
+  );
+  if ([...requestCounts.values()].some((count) => count > 1))
+    return "Multiple requests share a transaction ID; network transaction identity remains unknown.";
   const finished = new Set<number>();
   for (let start = 0; start < nodes.length; start += 1) {
     const path = new Set<number>();
@@ -153,6 +164,21 @@ export const scenarioNetworkCoverageReason = (
     for (const item of path) finished.add(item);
   }
   return undefined;
+};
+
+/** Request times differ on every run, so comparisons leave them out. */
+const withoutRequestTiming = (event: object): object => {
+  const {
+    observed_at: _observed,
+    started_at: _started,
+    elapsed_ms: _elapsed,
+    ...rest
+  } = event as {
+    observed_at?: unknown;
+    started_at?: unknown;
+    elapsed_ms?: unknown;
+  };
+  return rest;
 };
 
 /** Hash normalized own evidence and its complete parent fingerprint in linear graph space. */

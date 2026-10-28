@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { jsonRecordSchema } from "../jsonRecord.js";
 import type { WebNetworkCaptureRecord } from "../webNetworkCapture.js";
 import { AnalysisUnsupportedTargetError } from "../analysisErrorCore.js";
 import type { AnalysisError } from "../analysisErrorBase.js";
@@ -72,7 +73,7 @@ const toolSchema = z.strictObject({
   body_shape: z
     .strictObject({
       type: z.literal("object"),
-      properties: z.record(z.string(), jsonTypeNameSchema),
+      properties: jsonRecordSchema(jsonTypeNameSchema),
     })
     .nullable(),
   statuses: z.array(z.number()),
@@ -224,17 +225,23 @@ const addCaptureRecords = (
   return ok(undefined);
 };
 
-/** Project retained request lines, from a HAR or a browser scenario, into a replayable tool surface; templates are inferences. */
-export const projectEnvironmentManifestView = (
-  parent: AnalysisViewParent,
+/** Create the manifest budget with its selected query names and template rules. */
+export const createEnvironmentManifestAccumulator = (
   view: AnalysisViewRequest,
-  accumulator = view.kind === "environment-manifest"
+): EnvironmentManifestAccumulator =>
+  view.kind === "environment-manifest"
     ? new EnvironmentManifestAccumulator(
         undefined,
         view.include_query_parameter_names,
         view.template_rules,
       )
-    : new EnvironmentManifestAccumulator(),
+    : new EnvironmentManifestAccumulator();
+
+/** Project retained request lines, from a HAR or a browser scenario, into a replayable tool surface; templates are inferences. */
+export const projectEnvironmentManifestView = (
+  parent: AnalysisViewParent,
+  view: AnalysisViewRequest,
+  accumulator = createEnvironmentManifestAccumulator(view),
 ): Result<UnsignedAnalysisView, AnalysisError> => {
   if (view.kind !== "environment-manifest")
     return err(

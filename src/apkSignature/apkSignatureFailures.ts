@@ -6,6 +6,7 @@ import {
   bindArtifactFileCleanup,
 } from "../artifacts/ArtifactFileOperation.js";
 import { analysisErrorWithCleanupFailure } from "../domain/analysisErrorCleanup.js";
+import { completedStableArtifactObservation } from "../artifacts/StableArtifactObservation.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
 import { AnalysisError } from "../domain/analysisErrorBase.js";
 import {
@@ -128,6 +129,8 @@ export const apkSignatureFailure = (
   path: string,
 ): AnalysisError => {
   const primary = primaryFailure(artifactFilePrimaryFacts(cause), path);
+  const observation = completedStableArtifactObservation(cause, path);
+  if (observation !== undefined) primary.retainPartialObservation(observation);
   if (!(cause instanceof ArtifactReaderFailure) || cause.cleanup === undefined)
     return primary;
   const cleanup = new ProviderCleanupError(

@@ -3,6 +3,7 @@ import {
   indexSemanticOpaqueEffects,
   semanticOpaqueBindingEffects,
   semanticBindingCanBeRebound,
+  semanticOpaqueBindingReadMayHaveChanged,
 } from "./javascriptSemanticOpaqueEffects.js";
 import * as t from "@babel/types";
 
@@ -80,6 +81,8 @@ import {
 } from "./javascriptSemanticAmbientWrites.js";
 import {
   hasUncertainTypeOnlyModuleSideEffect,
+  isTypeOnlyImportDeclaration,
+  isTypeOnlyImportSpecifier,
   semanticImportEqualsSpecifier,
 } from "./javascriptModuleDeclaration.js";
 import {
@@ -832,28 +835,9 @@ const resolveGlobalAliasFact = (
   return openGlobalFact(name);
 };
 
-/**
- * Proven Electron export path segments for call and construction roots, keyed by
- * root offset. Only proven Electron origins are present; callers must not
- * infer an Electron export from an absent entry or familiar local name.
- */
-export const classifyParsedJavaScriptElectronBindings = (
-  file: ParsedJavaScriptSource,
-): ReadonlyMap<number, readonly string[]> =>
-  completeSemanticSteps(classifyParsedJavaScriptElectronBindingsSteps(file));
-
-/** Resolve Electron aliases while yielding during lexical and AST scans. */
-export function* classifyParsedJavaScriptElectronBindingsSteps(
-  file: ParsedJavaScriptSource,
-): Generator<void, ReadonlyMap<number, readonly string[]>> {
-  const state = createState(file.program);
-  yield* collectDefinitionsSteps(file.program, state);
-  return (yield* indexJavaScriptElectronIdentitySteps(file.program, state))
-    .bindings;
-}
-
 /** Shared lexical identity and visible-write proof for direct and wrapped calls. */
 export interface JavaScriptElectronIdentity {
+  /** Proven export paths keyed by call/construction root offset; absence is unknown. */
   readonly bindings: ReadonlyMap<number, readonly string[]>;
   readonly intactExport: (path: readonly (string | null)[]) => boolean;
   readonly exportPath: (root: t.Node) => readonly string[] | undefined;
@@ -872,7 +856,7 @@ export function* indexJavaScriptElectronIdentitySteps(
   const writes = new SemanticPropertyPathCoverage();
   let collectedWrites = false;
   const exportsByBinding = new Map<string, readonly string[] | null>();
-  const rootExport = (root: t.Node): readonly string[] | undefined => {
+  const rootOrigin = (root: t.Node): readonly string[] | undefined => {
     if (t.isIdentifier(root)) {
       if (semanticResolutionBlocked(state, root, root.name)) return undefined;
       const binding = resolveSemanticBindingState(state, root, root.name);
@@ -897,13 +881,26 @@ export function* indexJavaScriptElectronIdentitySteps(
       ? electronExportPath(origin.importedPath)
       : undefined;
   };
+  const rootExport = (root: t.Node): readonly string[] | undefined => {
+    // Possible origins must still cover writes through uncertain aliases.
+    // Admit positive reads separately, without caching their temporal validity.
+    if (state.opaqueEffects.byScope.size > 0 && t.isIdentifier(root)) {
+      const binding = resolveSemanticBindingState(state, root, root.name);
+      if (
+        binding !== undefined &&
+        semanticOpaqueBindingReadMayHaveChanged(binding, root, state)
+      )
+        return undefined;
+    }
+    return rootOrigin(root);
+  };
   yield* collectJavaScriptIdentityWritesSteps(
     program,
     state.erasedSyntaxNodes,
     (node, kind) => {
       if (kind === "opaque-call") return [interop.opaqueMutationPath(node)];
       const { root, members } = electronMemberPath(node);
-      const exported = kind === "binding" ? undefined : rootExport(root);
+      const exported = kind === "binding" ? undefined : rootOrigin(root);
       const path =
         exported === undefined
           ? (interop.intrinsicPath(root) ??
@@ -967,7 +964,7 @@ export function* indexJavaScriptElectronIdentitySteps(
     invocationPath,
     mayChangeAppPath: createSemanticElectronAppPathChangeQuery(
       state,
-      rootExport,
+      rootOrigin,
       interop,
     ),
   };
@@ -2038,7 +2035,10 @@ const bindImports = (
   scope: JavaScriptSemanticScopeState,
   state: JavaScriptSemanticAnalysisState,
 ): void => {
+  if (isTypeOnlyImportDeclaration(node)) return;
   for (const specifier of node.specifiers) {
+    if (t.isImportSpecifier(specifier) && isTypeOnlyImportSpecifier(specifier))
+      continue;
     const importedPath = t.isImportDefaultSpecifier(specifier)
       ? ["default"]
       : t.isImportNamespaceSpecifier(specifier)
@@ -2053,12 +2053,7 @@ const bindImports = (
       definitionNode: specifier.local,
       initializer: null,
       directOrigin: { specifier: node.source.value, importedPath },
-      runtimeImport:
-        node.importKind !== "type" &&
-        node.importKind !== "typeof" &&
-        (!t.isImportSpecifier(specifier) ||
-          (specifier.importKind !== "type" &&
-            specifier.importKind !== "typeof")),
+      runtimeImport: true,
     });
   }
 };

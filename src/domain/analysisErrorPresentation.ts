@@ -1,3 +1,4 @@
+import { describeResidualUnknownGraphConstraint } from "./residualUnknownGraphError.js";
 import {
   AnalysisAccessDeniedError,
   AnalysisArtifactChangedError,
@@ -70,7 +71,9 @@ export const analysisErrorRemediationAction = (
   if (error instanceof AnalysisCapabilityUnavailableError && error.retryable)
     return "Review details.reason, then retry the same analysis after the condition clears.";
   if (error instanceof EvidenceFileError && error.published !== undefined)
-    return "Use the published file at details.published_path and resolve the reported staging cleanup failure.";
+    return error.published.path === undefined
+      ? "Resolve the reported staging cleanup failure. Publication completed; its path identity is excluded."
+      : "Use the published file at details.published_path and resolve the reported staging cleanup failure.";
   if (
     error instanceof ProviderSelectionError &&
     error.remediationAction !== undefined
@@ -115,7 +118,7 @@ export const analysisErrorRemediationAction = (
     return "Use an artifact within the capacity reported in details.detail. Changing output detail or retrying the unchanged input does not remove this boundary.";
   if (error instanceof HopperTimeoutError)
     return error.operation === undefined
-      ? "Review details.launcher and inspect Hopper for ongoing initial analysis or a pending loader, demo, or license dialog. For a large target, increase REA_HOPPER_STARTUP_TIMEOUT_MS in the environment that starts REA and allow at least that long in the MCP client. Resolve retained cleanup before reopening."
+      ? "Review details.launcher and inspect Hopper for ongoing initial analysis or a pending loader, demo, or license dialog. For a large target, use update_analysis_settings with setting hopper.startup_timeout_ms and action set for the next startup attempt without restarting REA, or increase REA_HOPPER_STARTUP_TIMEOUT_MS for future REA processes. Allow at least that long in the MCP client. Resolve retained cleanup before reopening."
       : error.providerState === "busy"
         ? "Check binary_session.analysis_activity, wait for the active Hopper request to finish, then retry."
         : "Check binary_session for Hopper health, then retry the operation.";
@@ -158,15 +161,60 @@ export const analysisErrorRemediationAction = (
     return "Check the current process's read access to the selected path. Retry with a readable local file.";
   if (error instanceof AnalysisArtifactChangedError)
     return "Wait until the selected file is stable. For an active binary session, reopen the target with open_binary before retrying so REA acquires its current identity; for a CLI command or target-free tool, rerun the operation.";
-  if (error instanceof ConfigurationError && error.settings.length > 0)
-    return `Correct ${[...new Set(error.settings.map(({ setting }) => setting))].join(", ")} in the environment that starts REA (your shell or the MCP client's registration), then rerun.`;
+  if (error instanceof ConfigurationError)
+    return (
+      error.remediationAction ??
+      (error.settings.length > 0
+        ? `Correct ${[...new Set(error.settings.map(({ setting }) => setting))].join(", ")} in the environment that starts REA (your shell or the MCP client's registration), then rerun.`
+        : analysisErrorUserMessage(error))
+    );
   if (error instanceof AnalysisInputError)
-    return `Read the declared input schema or CLI usage for ${error.operation}; if using MCP and the catalog may be stale, call tools/list. Correct the listed fields, then retry. Do not repeat the unchanged call.`;
+    return (
+      error.remediationAction ??
+      `Read the declared input schema or CLI usage for ${error.operation}; if using MCP and the catalog may be stale, call tools/list. Correct the listed fields, then retry. Do not repeat the unchanged call.`
+    );
   if (
     error instanceof AnalysisOutputError &&
     error.remediationAction !== undefined
   )
     return error.remediationAction;
+  if (
+    error instanceof UnknownRegistryError &&
+    error.reason === "constraint" &&
+    error.constraint !== undefined
+  ) {
+    const suffix = " Do not repeat the unchanged call.";
+    switch (error.constraint.kind) {
+      case "missing_evidence":
+        return (
+          "Use an Evidence ID retained in this session; obtain or import the missing Evidence before referencing it." +
+          suffix
+        );
+      case "missing_unknown":
+        return (
+          "Use an unknown_id retained in this session; create or import the related unknown before referencing it." +
+          suffix
+        );
+      case "resolution_unproven":
+        return (
+          "Supply supporting non-mutation Evidence matching the unknown's required authority, confidence and environment, or withdraw the unsupported resolution." +
+          suffix
+        );
+      case "contradicting_evidence":
+        return (
+          "Reconcile the contradicting Evidence before claiming a verified resolution." +
+          suffix
+        );
+      case "dependency_cycle":
+        return (
+          "Correct the depends-on relationships to remove the dependency cycle." +
+          suffix
+        );
+      case "history_gap":
+      case "revision_chain":
+        break;
+    }
+  }
   if (error instanceof UnknownRegistryError && error.reason === "not-found")
     return "Check that the unknown_id belongs to this session, then retry.";
   return analysisErrorUserMessage(error);
@@ -224,7 +272,7 @@ export const analysisErrorCategory = (
     return "invalid_input";
   if (
     error instanceof UnknownRegistryError &&
-    error.reason === "already-exists"
+    (error.reason === "already-exists" || error.reason === "constraint")
   )
     return "invalid_input";
   return STATIC_ERROR_CATEGORIES[error._tag] ?? "execution_failure";
@@ -317,6 +365,8 @@ export const analysisErrorUserMessage = (error: AnalysisError): string => {
     return "This residual unknown already exists in the session. Reuse it or call update_unknown with its current expected_revision; do not repeat record_unknown.";
   if (error instanceof UnknownRegistryError && error.reason === "not-found")
     return "The requested residual unknown does not exist in this session. Check the unknown_id and try again.";
+  if (error instanceof UnknownRegistryError && error.constraint !== undefined)
+    return describeResidualUnknownGraphConstraint(error.constraint);
   if (error instanceof UnknownRegistryError)
     return "Evidence state changed before the update completed. Refresh the current state and try again.";
   if (error instanceof ConfigurationError)

@@ -55,9 +55,10 @@ it("preserves ordinary output when no sensitive input was declared", () => {
 });
 
 it("preserves ANSI styling commands when the secret matches color digits", () => {
-  const chunks = ["\u001b[31m1", "2\\u001b[0m"];
-  const result = redactTerminalChunks(chunks, ["12"]);
-  expect(result).toEqual(chunks);
+  const ansi = "\u001b[31m12\u001b[0m";
+  expect(redactTerminalSerialization(ansi, ["12"])).toBe(
+    "\u001b[31m**\u001b[0m",
+  );
 });
 
 it("keeps Unicode masking bounded and never retains the explicit value", () => {
@@ -70,8 +71,13 @@ it("keeps Unicode masking bounded and never retains the explicit value", () => {
   expect(Buffer.byteLength(frames[0]!.data)).toBe(1);
 });
 
-it("redacts visible ANSI replay text without modifying control sequences", () => {
-  const serialized = "\\u001b[31m12\\u001b[0m";
-  const result = redactTerminalSerialization(serialized, ["12"]);
-  expect(result).toBe("\\u001b[31m**\\u001b[0m");
+it("masks split terminal echoes while retaining ANSI parameters", () => {
+  const frames = [
+    { sequence: 0, at_ms: 0, data: "\u001b[31msec" },
+    { sequence: 1, at_ms: 1, data: "ret\u001b[0m" },
+  ];
+  redactRetainedTerminalFrames(frames, ["secret"]);
+  expect(frames.map((frame) => frame.data).join("")).toBe(
+    "\u001b[31m******\u001b[0m",
+  );
 });

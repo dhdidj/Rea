@@ -154,8 +154,8 @@ export const runPcapCommand = async (options: {
     if (selectedLimiter !== undefined)
       await assertArtifactCommandPath(selectedLimiter, operation, {
         capturedOutput: {
-          stdout: output.stdout.text,
-          stderr: output.stderr.text,
+          stdout: redactPcapDiagnostic(output.stdout.text, output.diagnosticTruncated === true || output.outputIncomplete === true),
+          stderr: redactPcapDiagnostic(output.stderr.text, output.diagnosticTruncated === true || output.outputIncomplete === true),
           stdout_bytes: output.stdout.bytes,
           stderr_bytes: output.stderr.bytes,
           exit_code: output.exitCode ?? null,

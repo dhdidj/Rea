@@ -71,3 +71,98 @@ it("rejects an unchanged artifact comparison that retains a changed row", async 
   });
   expect(session.evidenceById(comparison.evidence_id)).toEqual(comparison);
 });
+
+it("does not pass an unchanged aggregate over unavailable source coverage", async () => {
+  const original = ARTIFACT_COMPARISON_EXAMPLE.left;
+  const left = createEvidence(
+    { path: "fixture-left", sha256: "0".repeat(64), format: "file" },
+    original.provider,
+    {
+      operation: "inventory_artifact",
+      parameters: {},
+      result: {
+        ...(original.normalized_result as Record<string, unknown>),
+        coverage: { scope: "root", status: "unknown" },
+      },
+      confidence: "observed",
+      authority: "shipped-artifact",
+    },
+  );
+  const right = ARTIFACT_COMPARISON_EXAMPLE.right;
+  const actual = compareArtifacts(left, right);
+  expect(actual.status).toBe("unknown");
+  const comparison = createEvidence(
+    undefined,
+    {
+      id: "rea-artifact-comparison",
+      name: "REA artifact comparison",
+      version: "1",
+    },
+    {
+      predicateType: "rea.artifact-comparison",
+      operation: "compare_artifacts",
+      parameters: {
+        left_evidence_ids: [left.evidence_id],
+        right_evidence_ids: [right.evidence_id],
+      },
+      result: {
+        ...actual,
+        status: "unchanged",
+        changes: [],
+        summary: {
+          unchanged: 1,
+          added: 0,
+          removed: 0,
+          changed: 0,
+          unknown: 0,
+          contradiction: 0,
+        },
+      },
+      confidence: "derived",
+      authority: "analyst-inference",
+      evidenceLinks: [left.evidence_id, right.evidence_id],
+    },
+  );
+  const session = createTestBinarySession(() => {
+    throw new Error("No provider expected");
+  });
+  const harness = await createApplicationMcpHarness({ session });
+  onTestFinished(harness.close);
+  for (const record of [left, right, comparison])
+    expect(session.recordEvidence(record).ok).toBe(true);
+  const response = await harness.client.callTool({
+    name: "verify_reconstruction",
+    arguments: {
+      specification: {
+        name: "Artifact structure",
+        claims: [
+          {
+            kind: "structural-artifact",
+            claim_id: "artifact-graph",
+            title: "Artifact graph remains equal",
+            comparison_evidence_id: comparison.evidence_id,
+            dimension: "overall",
+          },
+        ],
+      },
+    },
+  });
+  expect(response.isError, JSON.stringify(response)).not.toBe(true);
+  expect(response.structuredContent).toMatchObject({
+    normalized_result: {
+      status: "unknown",
+      claims: {
+        items: [
+          {
+            status: "unknown",
+            observed_status: "unchanged",
+            limitations: expect.arrayContaining([
+              "Artifact source inventories do not establish an unchanged comparison.",
+            ]),
+          },
+        ],
+      },
+    },
+  });
+  expect(session.evidenceById(comparison.evidence_id)).toEqual(comparison);
+});

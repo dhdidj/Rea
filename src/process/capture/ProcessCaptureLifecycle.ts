@@ -67,6 +67,7 @@ import {
   type ProcessCaptureTruncationDetails,
 } from "../../domain/process/processCaptureCoverage.js";
 import { scheduleProcessInterval, type ProcessTimer } from "./ProcessTimer.js";
+import { sensitiveTerminalInputValues, redactRetainedTerminalFrames } from "./ProcessSensitiveTerminalOutput.js";
 import { monotonicProcessCaptureClock } from "./ProcessCaptureClock.js";
 
 import type {
@@ -1489,18 +1490,36 @@ export const captureTerminalFrames = (options: {
       subscription.dispose();
     }
     const identifiers = options.identifiers();
-    if (
-      options.scenario.normalization.pids &&
-      firstIdentifiers !== undefined &&
-      identifiers !== firstIdentifiers
-    ) {
-      normalizedBytes = normalizeRetainedTerminalFrames(
+    try {
+      if (
+        options.scenario.normalization.pids &&
+        firstIdentifiers !== undefined &&
+        identifiers !== firstIdentifiers
+      ) {
+        normalizedBytes = normalizeRetainedTerminalFrames(
+          options.frames,
+          options.normalizeText,
+          options.scenario.limits.output_bytes,
+        );
+        firstIdentifiers = identifiers;
+      }
+    } finally {
+      // Partial observations also reference this array when finalization fails.
+      redactRetainedTerminalFrames(
         options.frames,
-        options.normalizeText,
-        options.scenario.limits.output_bytes,
+        sensitiveTerminalInputValues(options.scenario),
       );
-      firstIdentifiers = identifiers;
     }
+    // Privacy masking can change UTF-8 widths; retained totals describe
+    // precisely the released observations, not the original PTY bytes.
+    rawBytes = options.frames.reduce(
+      (sum, frame) => sum + Buffer.byteLength(frame.raw_data ?? frame.data),
+      0,
+    );
+    normalizedBytes = options.frames.reduce(
+      (sum, frame) => sum + Buffer.byteLength(frame.data),
+      0,
+    );
     return {
       raw_terminal: {
         budget_bytes: options.scenario.limits.output_bytes,

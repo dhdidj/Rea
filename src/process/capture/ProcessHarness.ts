@@ -30,6 +30,7 @@ import {
   ProcessCaptureSnapshotFailure,
 } from "./FilesystemSnapshot.js";
 import { TerminalRenderer } from "./TerminalRenderer.js";
+import { sensitiveTerminalInputValues } from "./ProcessSensitiveTerminalOutput.js";
 import type { ProcessTimer } from "./ProcessTimer.js";
 import {
   createBoundedProcessTextNormalizer,
@@ -341,6 +342,7 @@ const startCaptureRuntime = async (
       renderer,
       terminalRetention,
       options.observationBuffer,
+      sensitiveTerminalInputValues(scenario),
     );
     scheduleScenarioInteractions({
       ...options,

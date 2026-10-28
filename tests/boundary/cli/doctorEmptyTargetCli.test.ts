@@ -20,10 +20,28 @@ cliTest.for([
         {
           path: "target",
           code: "too_small",
-          message: "Target must not be empty",
         },
       ],
     });
+  },
+);
+
+cliTest(
+  "doctor advertises the selected local-path constraints",
+  async ({ cli }) => {
+    const result = await cli.run({
+      arguments: ["doctor", "--schema", "--json"],
+    });
+    expect(result.exitCode, result.stderr).toBe(0);
+    const schema = result.json as {
+      options: {
+        properties: { target: { minLength: number; pattern: string } };
+      };
+    };
+    expect(schema.options.properties.target.minLength).toBe(1);
+    expect(
+      new RegExp(schema.options.properties.target.pattern).test("a\u0000b"),
+    ).toBe(false);
   },
 );
 

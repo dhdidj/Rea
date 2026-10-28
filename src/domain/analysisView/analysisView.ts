@@ -53,6 +53,12 @@ import {
   projectNativeExportsView,
 } from "./nativeExportsView.js";
 import {
+  elfDependenciesViewRequestSchema,
+  elfDependenciesViewItemsSchema,
+  elfDependenciesSummarySchema,
+  projectElfDependenciesView,
+} from "./elfDependenciesView.js";
+import {
   byteEntropySummarySchema,
   projectByteEntropyView,
 } from "./byteEntropyView.js";
@@ -430,6 +436,7 @@ export const analysisViewRequestSchema = z.discriminatedUnion("kind", [
   erlangBeamViewRequestSchema,
   pythonPycViewRequestSchema,
   nativeExportsViewRequestSchema,
+  elfDependenciesViewRequestSchema,
   javaScriptRoutesViewRequestSchema,
   webBundleViewRequestSchema,
   nativeFunctionMatchingViewRequestSchema,
@@ -554,6 +561,7 @@ const viewResultBase = {
     "inspect_devicetree",
     "inspect_byte_entropy",
     "inspect_native_exports",
+    "inspect_elf_dependencies",
     "inspect_binary_layout",
     "inspect_go_binary",
     "gdb_console",
@@ -682,6 +690,12 @@ export const nativeExportsSummaryViewResultSchema = z.strictObject({
   ...summaryViewResultBase,
   parent_operation: z.literal("inspect_native_exports"),
   summary: nativeExportsSummarySchema,
+});
+
+export const elfDependenciesSummaryViewResultSchema = z.strictObject({
+  ...summaryViewResultBase,
+  parent_operation: z.literal("inspect_elf_dependencies"),
+  summary: elfDependenciesSummarySchema,
 });
 
 export const devicetreeSummaryViewResultSchema = z.strictObject({
@@ -1284,6 +1298,7 @@ export const analysisViewResultSchema = z.discriminatedUnion("kind", [
     devicetreeSummaryViewResultSchema,
     pythonPycSummaryViewResultSchema,
     nativeExportsSummaryViewResultSchema,
+    elfDependenciesSummaryViewResultSchema,
     byteEntropySummaryViewResultSchema,
     gdbCommandSummaryViewResultSchema,
     objdumpSummaryViewResultSchema,
@@ -1336,6 +1351,14 @@ export const analysisViewResultSchema = z.discriminatedUnion("kind", [
     view: nativeExportsViewRequestSchema,
     exports: nativeExportsSummarySchema,
     items: nativeExportsViewItemsSchema,
+  }),
+  z.strictObject({
+    ...viewResultBase,
+    kind: z.literal("elf-dependencies"),
+    parent_operation: z.literal("inspect_elf_dependencies"),
+    view: elfDependenciesViewRequestSchema,
+    dependencies: elfDependenciesSummarySchema,
+    items: elfDependenciesViewItemsSchema,
   }),
   z.strictObject({
     ...viewResultBase,
@@ -1608,6 +1631,7 @@ const retainedViewProjectors = new Map<string, typeof projectWasmArtifactView>([
   ["inspect_erlang_beam", projectErlangBeamView],
   ["inspect_devicetree", projectDevicetreeView],
   ["inspect_native_exports", projectNativeExportsView],
+  ["inspect_elf_dependencies", projectElfDependenciesView],
   ["inspect_native_load_image", projectNativeLoadImageView],
   ["inspect_python_pyc", projectPythonPycView],
   ["frida_session_status", projectFridaSessionStatusView],

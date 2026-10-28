@@ -130,6 +130,21 @@ it("derives closed-session address and explicit-path APK availability from their
     available: true,
     reason: "available",
   });
+  for (const kind of ["artifact", "archive"] as const) {
+    expect(
+      entry("inspect_address_context", status({ open: true, kind })),
+    ).toMatchObject({
+      available: false,
+      reason: "target_unsupported",
+      remediation: expect.stringContaining("explicit document"),
+    });
+    expect(
+      entry("inspect_apk_signature", status({ open: true, kind })),
+    ).toMatchObject({
+      available: true,
+      reason: "available",
+    });
+  }
 });
 
 describe("ADB and Apktool host availability", () => {

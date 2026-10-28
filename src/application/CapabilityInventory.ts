@@ -129,11 +129,7 @@ type AvailabilityContext = {
   readonly targetOpen: boolean;
   readonly requiresActiveTarget: boolean;
   readonly targetKind:
-    | "executable"
-    | "database"
-    | "archive"
-    | "artifact"
-    | undefined;
+    "executable" | "database" | "archive" | "artifact" | undefined;
   readonly targetFormat: string | undefined;
   readonly descriptors: ReadonlyMap<string, ProviderDescriptor>;
   readonly policy: AvailabilityPolicy;
@@ -144,8 +140,7 @@ type EnhancedContractName = Extract<
   { readonly kind: "enhanced" }
 >["name"];
 type CompositionRequirements = readonly (
-  | AnalysisOperation
-  | readonly AnalysisOperation[]
+  AnalysisOperation | readonly AnalysisOperation[]
 )[];
 type AvailabilityMode = {
   readonly name: string;
@@ -773,12 +768,16 @@ const targetAvailability = ({
     targetKind !== undefined &&
     targetKind !== "executable" &&
     targetKind !== "database" &&
-    (kind === "official-proxy" || kind === "enhanced")
+    (kind === "official-proxy" ||
+      kind === "enhanced" ||
+      name === "inspect_address_context")
   )
     return {
       reason: "target_unsupported",
       remediation:
-        "Inventory or extract a native executable, then call open_binary on that executable.",
+        name === "inspect_address_context"
+          ? "Inventory or extract a native executable, then call open_binary on that executable. An explicit document can still be queried, but its facets may be unavailable."
+          : "Inventory or extract a native executable, then call open_binary on that executable.",
     };
   if (
     targetOpen &&

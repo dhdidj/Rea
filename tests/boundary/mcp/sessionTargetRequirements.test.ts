@@ -79,3 +79,51 @@ it("advertises closed-session address and explicit-path APK tools according to t
     reason: "available",
   });
 });
+
+it("reports default address resolution unavailable for an artifact while retaining explicit-document results", async () => {
+  const root = await createTestTempDirectory("rea-address-artifact-status-");
+  const path = join(root, "sample.plist");
+  await writeFile(
+    path,
+    '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleName</key><string>Example</string></dict></plist>',
+  );
+  const { call } = await connectLocalToolsMcp();
+  const opened = await call("open_binary", { path });
+  expect(opened.isError, JSON.stringify(opened)).not.toBe(true);
+  for (const detail of ["summary", "complete"] as const) {
+    const reply = await call("binary_session", { detail });
+    expect(reply.isError).not.toBe(true);
+    const result = toolContract("binary_session").outputSchema.parse(
+      reply.structuredContent,
+    ).result;
+    const entry = expandToolAvailability(result.tool_availability).find(
+      (tool) => tool.name === "inspect_address_context",
+    );
+    expect(entry).toMatchObject({
+      available: false,
+      reason: "target_unsupported",
+      remediation: expect.stringContaining("explicit document"),
+    });
+  }
+  const implicit = await call("inspect_address_context", { address: "0x1000" });
+  expect(parseMcpToolError(implicit)).toMatchObject({
+    error: {
+      code: "capability_unavailable",
+      details: { selection_reason: "target_unsupported" },
+    },
+  });
+  const explicit = await call("inspect_address_context", {
+    address: "0x1000",
+    document: "sample.plist",
+  });
+  expect(explicit.isError, JSON.stringify(explicit)).not.toBe(true);
+  expect(explicit.structuredContent).toMatchObject({
+    result: {
+      name: { state: "unavailable" },
+      procedure: { state: "unavailable" },
+      comment: { state: "unavailable" },
+      inline_comment: { state: "unavailable" },
+      bookmarks: { state: "unavailable" },
+    },
+  });
+});

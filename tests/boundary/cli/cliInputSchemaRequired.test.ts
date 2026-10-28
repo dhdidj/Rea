@@ -515,6 +515,9 @@ describe("ADB selector input schemas: dispatch", () => {
     for (const request of requests) {
       const result = await serve(cli, [...request, "--json"]);
       expect(result.exitCode, request[0]).not.toBe(0);
+      expect(JSON.parse(result.stdout), request[0]).toMatchObject({
+        code: "VALIDATION_ERROR",
+      });
     }
     expect(provider.inspectAvailability).not.toHaveBeenCalled();
     expect(provider.execute).not.toHaveBeenCalled();

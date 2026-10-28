@@ -67,6 +67,7 @@ import {
   type ProcessCaptureTruncationDetails,
 } from "../../domain/process/processCaptureCoverage.js";
 import { scheduleProcessInterval, type ProcessTimer } from "./ProcessTimer.js";
+import { sensitiveTerminalInputValues, redactRetainedTerminalFrames } from "./ProcessSensitiveTerminalOutput.js";
 import { monotonicProcessCaptureClock } from "./ProcessCaptureClock.js";
 
 import type {
@@ -1501,6 +1502,7 @@ export const captureTerminalFrames = (options: {
       );
       firstIdentifiers = identifiers;
     }
+    redactRetainedTerminalFrames(options.frames, sensitiveTerminalInputValues(options.scenario));
     return {
       raw_terminal: {
         budget_bytes: options.scenario.limits.output_bytes,

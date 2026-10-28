@@ -108,7 +108,12 @@ const clientStates = [
 
 const agentActions = actions.filter(({ kind }) => kind !== "install_hopper");
 
-cliTest.for(["--dry-run=abc", "--dry-run=", "--dryRun=abc"] as const)(
+cliTest.for([
+  "--dry-run=abc",
+  "--dry-run=",
+  "--dryRun=abc",
+  "--dry-run=ab\ncd",
+] as const)(
   "rejects malformed setup dry-run value %s before approved changes are written",
   async (dryRun, { cli }) => {
     const home = await createTestTempDirectory("rea-cli-invalid-dry-run-");

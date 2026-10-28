@@ -19,6 +19,9 @@ export const ghidraProjectHistoryEvidence = (
     ...(info.mips_soft_float_storage === undefined
       ? {}
       : { mips_soft_float_storage: info.mips_soft_float_storage }),
+    ...(info.pdb_companion === undefined
+      ? {}
+      : { pdb_companion: info.pdb_companion }),
   };
   if (Object.keys(reports).length === 0) return undefined;
   return createEvidence(

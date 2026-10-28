@@ -4644,6 +4644,15 @@ it("keeps saved project reports as shared historical Evidence without applying f
         { name: "Decompiler Parameter ID", status: "disabled" as const },
       ],
     },
+    // A saved caller-PDB report stays history, not a check against this session.
+    pdb_companion: {
+      format: "rea-ghidra-pdb-v1" as const,
+      sha256: "d".repeat(64),
+      guid: "01234567-89ab-cdef-0123-456789abcdef",
+      age: 1,
+      program_guid: "01234567-89ab-cdef-0123-456789abcdef",
+      program_age: 1,
+    },
   };
   const close = vi.fn(async () => ok(null));
   const ghidra = provider(

@@ -1460,6 +1460,15 @@ any real abort. To silence that analyzer, set
 executables that miss the startup deadline instead, raise
 `REA_GHIDRA_STARTUP_TIMEOUT_MS` and the [Ghidra heap](#ghidra-heap-and-cpu-controls).
 
+To apply the PDB from the same build as a PE target before auto-analysis:
+
+```bash
+export REA_GHIDRA_PDB_FILE=/absolute/path/to/app.pdb
+```
+
+REA refuses a PDB whose GUID and age differ from the target's CodeView record.
+See [caller-selected PDB](ghidra-provider.md#caller-selected-pdb).
+
 ### Ghidra heap and CPU controls
 
 Set resource controls in the environment that launches the CLI or MCP server,

@@ -106,6 +106,7 @@ it("parses an opt-in project once for shared CLI/MCP configuration and rejects i
   for (const extra of [
     { REA_GHIDRA_LANGUAGE_ID: "x86:LE:64:default" },
     { REA_GHIDRA_SEED_FILE: join(process.cwd(), "seeds") },
+    { REA_GHIDRA_PDB_FILE: join(process.cwd(), "app.pdb") },
     { REA_GHIDRA_PROGRAM_NAME: "*" },
   ])
     expect(parseConfig({ ...environment, ...extra }).ok).toBe(false);

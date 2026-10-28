@@ -1,5 +1,6 @@
 import { ghidraSeedReportSchema } from "./GhidraAnalysisSeeds.js";
 import { ghidraDisabledAnalyzerReportSchema } from "./GhidraDisabledAnalyzers.js";
+import { ghidraPdbReportSchema } from "./GhidraPdbCompanion.js";
 import { z } from "zod";
 
 import type { JsonValue } from "../domain/jsonValue.js";
@@ -86,6 +87,8 @@ const sessionInfoSchema = z
     analysis_extensions: z.array(ghidraExtensionResultSchema).optional(),
     analysis_seeds: ghidraSeedReportSchema.optional(),
     disabled_analyzers: ghidraDisabledAnalyzerReportSchema.optional(),
+    /** Written by the PDB pre-script after verifying the caller PDB. */
+    pdb_companion: ghidraPdbReportSchema.optional(),
     mips_soft_float_storage: z
       .object({
         policy: z.literal(GHIDRA_MIPS_SOFT_FLOAT_STORAGE),
@@ -143,7 +146,7 @@ export const ghidraPdbLimitations = (
   const state = pdb.loaded === false ? "not loaded" : "load state unknown";
   return [
     ...limitations,
-    `${reference}Ghidra reports ${state}. Original names and types may be missing; an empty name search does not prove a procedure is absent. Use list_procedures and address-based analysis to inspect recovered functions. REA does not admit a caller-selected PDB companion.`,
+    `${reference}Ghidra reports ${state}. Original names and types may be missing; an empty name search does not prove a procedure is absent. Use list_procedures and address-based analysis to inspect recovered functions. To apply a PDB from this exact build, set REA_GHIDRA_PDB_FILE; REA does not search for one.`,
   ];
 };
 

@@ -1,6 +1,9 @@
 import type { IPty } from "@lydell/node-pty";
 
-import type { ProcessScenario } from "../../domain/process/processScenario.js";
+import {
+  sensitiveProcessInputProjection,
+  type ProcessScenario,
+} from "../../domain/process/processScenario.js";
 import {
   normalizeProcessElapsedTime,
   normalizeProcessText,
@@ -91,7 +94,7 @@ export const scheduleScenarioInteractions = (
         data:
           event.type === "input"
             ? event.sensitive
-              ? `<redacted-input:${String(Buffer.byteLength(event.data))}-bytes>`
+              ? ""
               : normalizeProcessText(
                   event.data,
                   scenario,
@@ -101,6 +104,9 @@ export const scheduleScenarioInteractions = (
             : event.type === "resize"
               ? `${String(event.columns)}x${String(event.rows)}`
               : event.signal,
+        ...(event.type === "input" && event.sensitive
+          ? sensitiveProcessInputProjection(event.data)
+          : {}),
         outcome,
       });
       options.recordEvent("interaction_events", sequence);

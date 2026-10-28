@@ -150,6 +150,8 @@ const writeBundleFiles = async (
       }
     | { readonly kind: "failed"; readonly cause: unknown };
   try {
+    // Refuse invalid spellings before recursively creating caller-selected parents.
+    SafeOutputTree.destinationSyntax(input.directory);
     if (input.exclusiveDestination !== true)
       await mkdir(dirname(input.directory), { recursive: true, mode: 0o700 });
     try {

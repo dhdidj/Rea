@@ -185,18 +185,27 @@ export class SafeOutputTree {
   }
 
   /** Resolve an admissible parent without acquiring output; create rechecks it. */
-  static async resolveDestination(outputRoot: string) {
+  /** Synchronous syntax admission before any caller creates parent directories. */
+  static destinationSyntax(outputRoot: string): {
+    readonly requested: string;
+    readonly name: string;
+  } {
     if (!isAbsolute(outputRoot))
       throw new SafeOutputTreeDestinationRefusal(
         "Extraction output root must be absolute",
       );
-    // Path syntax follows the host; `platform` selects only the name policy.
+    // Keep POSIX symlink/.. semantics; do not lexically resolve the path.
     const requested = absoluteCallerPath(outputRoot);
     const name = basename(requested);
     if (name === "." || name === "..")
       throw new SafeOutputTreeDestinationRefusal(
         "Invalid extraction output root",
       );
+    return { requested, name };
+  }
+
+  static async resolveDestination(outputRoot: string) {
+    const { requested, name } = this.destinationSyntax(outputRoot);
     let parent: string;
     try {
       const selectedParent = dirname(requested);

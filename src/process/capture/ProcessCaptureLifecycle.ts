@@ -1510,6 +1510,16 @@ export const captureTerminalFrames = (options: {
         sensitiveTerminalInputValues(options.scenario),
       );
     }
+    // Privacy masking can change UTF-8 widths; retained totals describe
+    // precisely the released observations, not the original PTY bytes.
+    rawBytes = options.frames.reduce(
+      (sum, frame) => sum + Buffer.byteLength(frame.raw_data ?? frame.data),
+      0,
+    );
+    normalizedBytes = options.frames.reduce(
+      (sum, frame) => sum + Buffer.byteLength(frame.data),
+      0,
+    );
     return {
       raw_terminal: {
         budget_bytes: options.scenario.limits.output_bytes,

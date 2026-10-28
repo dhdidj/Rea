@@ -1,4 +1,6 @@
 import { expect, it } from "vitest";
+import { javaScriptSemanticQueryInputSchema } from "../../domain/javascript/javascriptSemanticQuerySchemas.js";
+import { queryJavaScriptSemanticGraph } from "../../domain/javascript/javascriptSemanticQuery.js";
 import { graphForJavaScript } from "../../../tests/fixtures/javascriptSemanticGraph.js";
 
 it.each(
@@ -65,5 +67,116 @@ it.each(["{}", "unknownSource"])(
         relation_kinds: ["destructures"],
       }),
     );
+  },
+);
+
+it.each([
+  [
+    "object",
+    'const config = { mode: "strict" }; const { mode: selected } = config; config.mode = "loose";',
+  ],
+  [
+    "array",
+    'const config = ["strict"]; const [selected] = config; config[0] = "loose";',
+  ],
+  [
+    "nested",
+    'const config = { nested: { mode: "strict" } }; const { nested: { mode: selected } } = config; config.nested.mode = "loose";',
+  ],
+])(
+  "retains the captured property dependency before a later %s write",
+  (_name, source) => {
+    const graph = graphForJavaScript(source);
+    const selected = graph.nodes.find(
+      (node) => node.kind === "binding" && node.label === "selected",
+    );
+    expect(selected).toBeDefined();
+    const edge = graph.relations.find(
+      (relation) =>
+        relation.relation === "destructures" &&
+        relation.target_node_id === selected?.node_id,
+    );
+    expect(edge).toMatchObject({ resolution: "resolved" });
+    const trace = queryJavaScriptSemanticGraph(
+      graph,
+      javaScriptSemanticQueryInputSchema.parse({
+        seed: { kind: "semantic-node", node_id: selected?.node_id },
+        direction: "backward-provenance",
+      }),
+    );
+    expect(trace.relations).toContainEqual(edge);
+    expect(trace.unknowns).toEqual([]);
+  },
+);
+
+it.each([
+  [
+    "later deletion",
+    'const config = { mode: "strict" }; const { mode: selected } = config; delete config.mode;',
+    "resolved",
+  ],
+  [
+    "different later key",
+    'const config = { mode: "strict" }; const { mode: selected } = config; config.other = 1;',
+    "resolved",
+  ],
+  [
+    "earlier deletion",
+    'const config = { mode: "strict" }; delete config.mode; const { mode: selected } = config;',
+    "candidate",
+  ],
+  [
+    "unknown source",
+    "const config = unknownSource; const { mode: selected } = config;",
+    "candidate",
+  ],
+  [
+    "unknown mutation",
+    'const config = { mode: "strict" }; mutate(config); const { mode: selected } = config;',
+    "candidate",
+  ],
+  [
+    "deferred read",
+    'const config = { mode: "strict" }; function read() { const { mode: selected } = config; } delete config.mode; read();',
+    "candidate",
+  ],
+  [
+    "repeated function",
+    'const config = { mode: "strict" }; function read() { const { mode: selected } = config; delete config.mode; } read(); read();',
+    "candidate",
+  ],
+  [
+    "repeated loop",
+    'const config = { mode: "strict" }; for (let i = 0; i < 2; i++) { const { mode: selected } = config; delete config.mode; }',
+    "candidate",
+  ],
+  [
+    "earlier pattern default deletes the source",
+    'const config = { mode: "strict" }; const { absent = delete config.mode, mode: selected } = config;',
+    "candidate",
+  ],
+  [
+    "custom array iterator",
+    'const config = ["strict"]; config[Symbol.iterator] = function* () { yield "different"; }; const [selected] = config; config[0] = "loose";',
+    "candidate",
+  ],
+  [
+    "missing nested default",
+    'const config = {}; const { nested: { mode: selected } = { mode: "strict" } } = config; config.nested = {};',
+    "candidate",
+  ],
+])(
+  "keeps the %s dependency conservative where necessary",
+  (_name, source, resolution) => {
+    const graph = graphForJavaScript(source);
+    const selected = graph.nodes.find(
+      (node) => node.kind === "binding" && node.label === "selected",
+    );
+    const edge = graph.relations.find(
+      (relation) =>
+        relation.relation === "destructures" &&
+        relation.target_node_id === selected?.node_id,
+    );
+    expect(edge).toMatchObject({ resolution });
   },
 );

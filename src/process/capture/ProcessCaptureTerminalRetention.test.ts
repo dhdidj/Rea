@@ -179,3 +179,36 @@ it("retains PTY chunk boundaries when two output messages arrive fragmented", ()
     retained_frames: 4,
   });
 });
+
+it("keeps retained UTF-8 accounting exact after masking a sensitive echo", () => {
+  let emit: ((data: string) => void) | undefined;
+  const terminal = {
+    onData: (listener: (data: string) => void) => {
+      emit = listener;
+      return { dispose: () => undefined };
+    },
+  } as unknown as IPty;
+  const scenario = processScenarioSchema.parse({
+    executable: "unused",
+    events: [{ at_ms: 0, type: "input", data: "é", sensitive: true }],
+    normalization: { paths: false, ports: false, pids: false },
+  });
+  const frames: TerminalFrame[] = [];
+  const retention = captureTerminalFrames({
+    terminal,
+    scenario,
+    frames,
+    started: 0,
+    onOutput: () => undefined,
+    renderer: { write: () => undefined } as never,
+    normalizeText: createBoundedProcessTextNormalizer(scenario, "/tmp", -1),
+    identifiers: () => [],
+    recordEvent: () => undefined,
+  });
+  emit?.("echo:é");
+  const coverage = retention();
+  expect(frames.map((frame) => frame.data).join("")).toBe("echo:*");
+  expect(coverage.raw_terminal.observed_bytes).toBe(7);
+  expect(coverage.raw_terminal.retained_bytes).toBe(6);
+  expect(coverage.normalized_terminal.retained_bytes).toBe(6);
+});

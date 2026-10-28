@@ -220,8 +220,8 @@ export const runPcapCommand = async (options: {
       ...(cause instanceof OwnedCommandFailure && cause.snapshot !== null
         ? {
             capturedOutput: {
-              stdout: cause.snapshot.stdout.text,
-              stderr: cause.snapshot.stderr.text,
+              stdout: redactPcapDiagnostic(cause.snapshot.stdout.text, cause.snapshot.diagnosticTruncated === true || cause.snapshot.outputIncomplete === true),
+              stderr: redactPcapDiagnostic(cause.snapshot.stderr.text, cause.snapshot.diagnosticTruncated === true || cause.snapshot.outputIncomplete === true),
               truncated:
                 cause.snapshot.diagnosticTruncated === true ||
                 cause.snapshot.outputIncomplete === true,

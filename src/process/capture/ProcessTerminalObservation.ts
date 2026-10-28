@@ -8,6 +8,7 @@ import type {
   TerminalCaptureRetention,
 } from "./ProcessCaptureLifecycle.js";
 import type { RenderedTerminalFrame } from "../../domain/process/processCapture.js";
+import { redactTerminalChunks } from "./ProcessSensitiveTerminalOutput.js";
 
 interface ProcessTerminalObservation {
   readonly retention: TerminalCaptureRetention;
@@ -44,6 +45,7 @@ export const createProcessTerminalFinalizer = (
   renderer: Pick<TerminalRenderer, "frames" | "dispose">,
   retention: () => TerminalCaptureRetention,
   observations: ProcessCaptureObservationBuffer,
+  sensitiveValues: readonly string[] = [],
 ): {
   readonly complete: () => Promise<
     Result<ProcessTerminalObservation, AnalysisError>
@@ -54,7 +56,7 @@ export const createProcessTerminalFinalizer = (
     | Promise<Result<ProcessTerminalObservation, AnalysisError>>
     | undefined;
   const complete = () =>
-    (completed ??= observeTerminal(renderer, retention, observations));
+    (completed ??= observeTerminal(renderer, retention, observations, sensitiveValues));
   return {
     complete,
     dispose: async () => {
@@ -68,6 +70,7 @@ const observeTerminal = async (
   renderer: Pick<TerminalRenderer, "frames">,
   readRetention: () => TerminalCaptureRetention,
   observations: ProcessCaptureObservationBuffer,
+  sensitiveValues: readonly string[],
 ): Promise<Result<ProcessTerminalObservation, AnalysisError>> => {
   let retention: Result<TerminalCaptureRetention, AnalysisError>;
   try {
@@ -78,10 +81,15 @@ const observeTerminal = async (
   let rendered: Result<readonly RenderedTerminalFrame[], AnalysisError>;
   try {
     const frames = await renderer.frames();
-    rendered = ok(frames);
+    const safeFrames = frames.map((frame) => {
+      const [state] = redactTerminalChunks([frame.serialized_state], sensitiveValues);
+      const lines = redactTerminalChunks(frame.lines, sensitiveValues);
+      return { ...frame, serialized_state: state!, lines };
+    });
+    rendered = ok(safeFrames);
     observations.rendered_frames = {
       state: "available",
-      value: frames,
+      value: safeFrames,
     };
   } catch (cause) {
     const failure = terminalFailure(cause);

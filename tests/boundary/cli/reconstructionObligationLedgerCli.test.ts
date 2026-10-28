@@ -85,7 +85,7 @@ describe("reconstruction obligation ledger CLI parity", () => {
       retryable: false,
       details: {
         reason: expect.stringContaining(
-          "Evidence bundle manifests are not canonical",
+          "Evidence bundle records are not in canonical order",
         ),
       },
     });

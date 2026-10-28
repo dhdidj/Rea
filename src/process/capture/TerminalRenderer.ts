@@ -97,6 +97,19 @@ export class TerminalRenderer {
     return structuredClone(this.#frames);
   }
 
+  /** Retain privacy-safe snapshots and update byte accounting atomically. */
+  redactRetainedFrames(frames: readonly RenderedTerminalFrame[]): void {
+    this.#frames.splice(0, this.#frames.length, ...frames);
+    this.#capturedBytes = frames.reduce(
+      (total, frame) =>
+        total +
+        Buffer.byteLength(frame.serialized_state) +
+        frame.lines.reduce((sum, line) => sum + Buffer.byteLength(line), 0),
+      0,
+    );
+    this.#observedBytes = Math.max(this.#observedBytes, this.#capturedBytes);
+  }
+
   /** Whether a rendered observation exceeded its independent capture budget. */
   truncated(): boolean {
     return this.#truncated;

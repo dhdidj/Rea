@@ -9,6 +9,7 @@ import {
 import { createProcessTerminalFinalizer } from "./ProcessTerminalObservation.js";
 import { createBoundedProcessTextNormalizer } from "./ProcessNormalization.js";
 import { createProcessSensitiveOutput } from "./ProcessSensitiveOutput.js";
+import { ProcessCaptureError } from "./ProcessCaptureError.js";
 import { TerminalRenderer } from "./TerminalRenderer.js";
 
 const fixture = (
@@ -151,11 +152,15 @@ it.each([false, true])(
     run.emit("secret\r\nPUBLIC");
     run.seal();
     const result = await run.owner.complete();
-    expect(result.ok).toBe(false);
-    if (!result.ok)
-      expect(result.error.message).toContain(
-        "Sensitive terminal projection failed",
-      );
+    if (result.ok)
+      throw new Error("Expected private terminal projection failure");
+    expect(result.error).toBeInstanceOf(ProcessCaptureError);
+    expect(result.error).toMatchObject({
+      _tag: "ProcessCaptureError",
+      reason: "capture_failed",
+    });
+    expect(result.error.secondaryFailures).not.toContain(result.error);
+    expect(result.error.secondaryFailures).toHaveLength(disposeFails ? 1 : 0);
     expect(run.frames.map(({ data }) => data)).toEqual([""]);
     expect(run.observations.frames.state).toBe("unavailable");
     expect(run.observations.rendered_frames.state).toBe("unavailable");

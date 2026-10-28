@@ -74,15 +74,18 @@ it("rejects matcher and projection capacity before an oversized index allocation
   );
   const privateOutput = matcher("secret");
   const projected = privateOutput.project(["p".repeat(8_388_608)]);
-  expect(projected.ok).toBe(false);
-  if (
-    !projected.ok &&
-    projected.error instanceof AnalysisResourceConstraintError
-  )
-    expect(projected.error.reportedLimits).toMatchObject({
+  if (projected.ok) throw new Error("Expected bounded projection refusal");
+  expect(projected.error).toBeInstanceOf(AnalysisResourceConstraintError);
+  expect(projected.error).toMatchObject({
+    _tag: "AnalysisResourceConstraintError",
+    resource: "capacity",
+    retryable: false,
+    reportedLimits: {
       boundary: "terminal-sensitive-input",
       limit: "projection_index_bytes",
-    });
+      maximum: 33_554_432,
+    },
+  });
   expect(privateOutput.project(["small"])).toEqual(projected);
 });
 

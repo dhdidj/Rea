@@ -1,6 +1,9 @@
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
-import { parseProcessCapture } from "../../../src/domain/process/processCaptureParsing.js";
+import {
+  parseProcessCapture,
+  safeParseProcessCapture,
+} from "../../../src/domain/process/processCaptureParsing.js";
 import { ProcessCaptureError } from "../../../src/process/capture/ProcessCaptureError.js";
 import { captureProcessScenario } from "../../../src/process/capture/ProcessHarness.js";
 import { compareProcessCaptures } from "../../../src/domain/process/processComparison.js";
@@ -75,18 +78,28 @@ for (const sensitive of [true, false]) {
         const corrupted = structuredClone(capture);
         const redacted =
           corrupted.truncation_details.raw_terminal.redacted_bytes ?? 0;
-        expect(() =>
-          parseProcessCapture({
-            ...corrupted,
-            truncation_details: {
-              ...corrupted.truncation_details,
-              raw_terminal: {
-                ...corrupted.truncation_details.raw_terminal,
-                redacted_bytes: redacted + 1,
-              },
+        const rejected = safeParseProcessCapture({
+          ...corrupted,
+          truncation_details: {
+            ...corrupted.truncation_details,
+            raw_terminal: {
+              ...corrupted.truncation_details.raw_terminal,
+              redacted_bytes: redacted + 1,
             },
-          }),
-        ).toThrow("retained observations and budget accounting do not agree");
+          },
+        });
+        if (rejected.success)
+          throw new Error(
+            "Expected inconsistent redacted byte accounting to be rejected",
+          );
+        expect(rejected.error.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "custom",
+              path: ["truncation_details", "raw_terminal"],
+            }),
+          ]),
+        );
       }
       const views = {
         normalized: capture.frames.map(({ data }) => data).join(""),

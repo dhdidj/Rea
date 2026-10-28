@@ -493,3 +493,28 @@ it("retains unknown historical .js loader scope until a package manifest establi
       }),
     ]);
 });
+
+it("keeps resolver proof separate from native receiver effects", () => {
+  const references = (source: string) =>
+    analyzeJavaScriptStaticSource(source).references.map(
+      ({ operation, specifier }) => ({ operation, specifier }),
+    );
+  expect(
+    references(
+      'Object.freeze({}); require.resolve("./first.js"); require.resolve("./second.js");',
+    ),
+  ).toEqual([
+    { operation: "resolve", specifier: "./first.js" },
+    { operation: "resolve", specifier: "./second.js" },
+  ]);
+  for (const effect of [
+    "opaque(require);",
+    "require.resolve = replacement;",
+    'Object.defineProperty(require, "resolve", { value: replacement });',
+  ])
+    expect(
+      references(
+        `Object.freeze({}); ${effect} require.resolve("./second.js");`,
+      ).at(-1),
+    ).toEqual({ operation: "load", specifier: null });
+});

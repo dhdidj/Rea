@@ -51,6 +51,7 @@ import { jsonValueSchema } from "../domain/jsonValue.js";
 import { createPcapEvidence } from "../domain/pcap/pcapEvidence.js";
 import { preparePcapNativeBound } from "./PcapNativeBound.js";
 import { PcapSnapshot } from "./PcapSnapshot.js";
+import { redactPcapDiagnostic } from "./PcapDiagnosticRedaction.js";
 import { readStableArtifact } from "../artifacts/readStableArtifact.js";
 import { ArtifactReaderFailure } from "../artifacts/ArtifactReader.js";
 import { artifactFileCancellationCause } from "../artifacts/ArtifactFileOperation.js";
@@ -135,8 +136,8 @@ const probeCleanupFailure = (
       reason: cleanup.reason,
       previous_error: null,
       captured_output: {
-        stdout: output.stdout,
-        stderr: output.stderr,
+        stdout: redactPcapDiagnostic(output.stdout, cleanup.capturedOutput.truncated),
+        stderr: redactPcapDiagnostic(output.stderr, cleanup.capturedOutput.truncated),
         truncated: cleanup.capturedOutput.truncated,
       },
     },
@@ -162,8 +163,8 @@ const pcapCommandCleanupError = (
       reason: cleanup.reason,
       previous_error: null,
       captured_output: {
-        stdout: capturedOutput.stdout,
-        stderr: capturedOutput.stderr,
+        stdout: redactPcapDiagnostic(capturedOutput.stdout, cleanup.capturedOutput.truncated),
+        stderr: redactPcapDiagnostic(capturedOutput.stderr, cleanup.capturedOutput.truncated),
         truncated: cleanup.capturedOutput.truncated,
       },
     },
@@ -184,8 +185,8 @@ const assertValidPcapCommandText = (
     `${stage} output is not valid UTF-8; retained text contains replacement characters.`,
     {
       capturedOutput: {
-        stdout: output.stdout,
-        stderr: output.stderr,
+        stdout: redactPcapDiagnostic(output.stdout, output.cleanup?.capturedOutput.truncated ?? false),
+        stderr: redactPcapDiagnostic(output.stderr, output.cleanup?.capturedOutput.truncated ?? false),
         truncated: output.cleanup?.capturedOutput.truncated ?? false,
       },
       diagnostics: {

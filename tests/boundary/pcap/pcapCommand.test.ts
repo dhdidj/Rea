@@ -8,6 +8,7 @@ import type { ProviderProcessSupervisor } from "../../../src/process/ProviderPro
 import {
   AnalysisCancelledError,
   AnalysisProtocolError,
+  AnalysisResourceConstraintError,
 } from "../../../src/domain/analysisErrorCore.js";
 import { ProviderCleanupError } from "../../../src/domain/providerCleanupError.js";
 import { OwnedCommandFailure } from "../../../src/process/OwnedCommand.js";
@@ -235,4 +236,49 @@ it("returns complete stdout while retaining unresolved process cleanup", async (
   if (retained === undefined) throw new Error("Cleanup owner was not retained");
   mayClean = true;
   expect((await retained.owner.stop()).status).not.toBe("incomplete");
+});
+
+it("excludes a synthetic HTTP credential from resource-limit diagnostics", async () => {
+  const credential = "synthetic-pcap-secret";
+  const url = "http://demo:" + credential + "@example.test/path";
+  const failure = await runPcapCommand({
+    operation: "inspect_pcap_capture",
+    command: process.execPath,
+    arguments: ["-e", "process.stdout.write(" + JSON.stringify(url.repeat(100)) + ")"],
+    inputPath: "/owned-synthetic.pcap",
+    limits: { timeoutMs: 5000, maxOutputBytes: 256 },
+    environment: {},
+    signal: undefined,
+    retain: (owner) =>
+      onTestFinished(async () => {
+        expect((await owner.stop()).status).not.toBe("incomplete");
+      }),
+  }).catch((cause: unknown) => cause);
+  expect(failure).toBeInstanceOf(AnalysisResourceConstraintError);
+  if (!(failure instanceof AnalysisResourceConstraintError)) throw failure;
+  expect(JSON.stringify(failure.capturedOutput)).not.toContain(credential);
+  expect(failure.capturedOutput?.stdout).toContain("http://example.test/path");
+});
+
+it("preserves command failure classification while excluding HTTP userinfo", async () => {
+  const credential = "failure-only-secret";
+  const url = "http://demo:" + credential + "@example.test/path?q=1";
+  const failure = await runPcapCommand({
+    operation: "inspect_pcap_capture",
+    command: process.execPath,
+    arguments: ["-e", "process.stderr.write(" + JSON.stringify(url) + ");process.exitCode=7"],
+    inputPath: "/owned-synthetic.pcap",
+    limits: { timeoutMs: 5000, maxOutputBytes: 1024 },
+    environment: {},
+    signal: undefined,
+    retain: (owner) =>
+      onTestFinished(async () => {
+        expect((await owner.stop()).status).not.toBe("incomplete");
+      }),
+  }).catch((cause: unknown) => cause);
+  expect(failure).toBeInstanceOf(AnalysisProtocolError);
+  if (!(failure instanceof AnalysisProtocolError)) throw failure;
+  expect(failure.capturedOutput?.exit_code).toBe(7);
+  expect(JSON.stringify(failure.capturedOutput)).not.toContain(credential);
+  expect(failure.capturedOutput?.stderr).toContain("http://example.test/path?q=1");
 });

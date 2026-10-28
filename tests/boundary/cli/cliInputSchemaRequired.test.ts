@@ -198,7 +198,9 @@ describe("CLI advertised input schemas", () => {
       expect(validate({ commandTimeoutMs })).toBe(false);
     }
   });
+});
 
+describe("CLI selector schemas", () => {
   it("enforces nonempty selector bounds and absolute mapping paths in Android and browser CLI schemas", async () => {
     const cli = createCli({});
     const ajv = new Ajv2020({ strict: false });
@@ -232,9 +234,7 @@ describe("CLI advertised input schemas", () => {
     }
 
     const absoluteMapping =
-      process.platform === "win32"
-        ? "C:\\mapping.txt"
-        : "/targets/mapping.txt";
+      process.platform === "win32" ? "C:\\mapping.txt" : "/targets/mapping.txt";
     for (const mappingPath of [undefined, "", "mapping.txt", absoluteMapping]) {
       const valid =
         mappingPath === undefined || mappingPath === absoluteMapping;
@@ -270,9 +270,7 @@ describe("CLI advertised input schemas", () => {
       cli,
       "capture-web-screenshot",
     );
-    const validateScreenshotArgs = ajv.compile(
-      captureWebScreenshot.args ?? {},
-    );
+    const validateScreenshotArgs = ajv.compile(captureWebScreenshot.args ?? {});
     const screenshotArgsParser = parserSchema(
       cli,
       "capture-web-screenshot",
@@ -319,6 +317,37 @@ describe("CLI advertised input schemas", () => {
     }
   });
 
+  it("uses the owning contracts for sibling browser and Android selectors", async () => {
+    const cli = createCli({});
+    const ajv = new Ajv2020({ strict: false });
+    for (const command of [
+      "inspect-web-page",
+      "analyze-web-bundle",
+      "observe-web-session",
+      "discover-webmcp-tools",
+      "observe-web-execution",
+    ]) {
+      const advertised = await advertisedSchema(cli, command);
+      const validate = ajv.compile(advertised.args ?? {});
+      const parser = parserSchema(cli, command, "args");
+      for (const targetId of ["", "target-1"]) {
+        const input = { endpoint: "http://127.0.0.1:9222", targetId };
+        expect(validate(input), command).toBe(targetId !== "");
+        expect(parser?.safeParse(input).success, command).toBe(targetId !== "");
+      }
+    }
+    const trace = await advertisedSchema(cli, "trace-android-references");
+    const validate = ajv.compile(trace.options ?? {});
+    const parser = parserSchema(cli, "trace-android-references", "options");
+    for (const methodName of [undefined, "", "method"]) {
+      const input = methodName === undefined ? {} : { methodName };
+      expect(validate(input)).toBe(methodName !== "");
+      expect(parser?.safeParse(input).success).toBe(methodName !== "");
+    }
+  });
+});
+
+describe("CLI input defaults", () => {
   it("accepts the one-argument keyed-archive call and keeps its constraints", async () => {
     const cli = createCli({});
     const advertised = await advertisedSchema(cli, "inspect-keyed-archive");

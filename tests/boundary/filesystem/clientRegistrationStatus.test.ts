@@ -15,6 +15,7 @@ import { classifyClientRegistrationCommand } from "../../../src/application/Clie
 import { existingMaintenanceScope } from "../../../src/application/UpdateMaintenance.js";
 import { ConfigurationError } from "../../../src/domain/configurationErrors.js";
 import { err } from "../../../src/domain/result.js";
+import { toolFamiliesConstraint } from "../../../src/config/mcpToolFamilies.js";
 import { PRODUCT_IDENTITY } from "../../../src/identity.js";
 import { CURRENT_ENTRYPOINT_PATH } from "../../../src/process/CurrentEntrypointPath.js";
 
@@ -151,7 +152,9 @@ describe("client registration environment validation", () => {
         client: "cursor",
         state: "invalid",
         command: [],
-        remediation: expect.stringContaining("REA_MCP_TOOL_FAMILIES"),
+        remediation: expect.stringContaining(
+          `REA_MCP_TOOL_FAMILIES: ${toolFamiliesConstraint} Repair it before rerunning setup.`,
+        ),
       }),
     ]);
   });

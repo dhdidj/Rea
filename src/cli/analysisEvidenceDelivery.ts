@@ -168,12 +168,15 @@ export const publishCliAnalysisEvidence = async (
   result: Result<Evidence, JsonValue>,
   input: CliEvidenceDelivery,
 ): Promise<JsonValue> => {
-  const { operation, signal, detail, evidenceOutput } = input;
+  const { detail, evidenceOutput } = input;
   const projectFailure = (error: AnalysisError) =>
     projectAnalysisError(
       redactExplicitFailure(error, input.sensitiveValues ?? []),
     );
-  if (!result.ok) return result.error;
+  if (!result.ok)
+    return evidenceOutput === undefined
+      ? result.error
+      : publishFailurePartialEvidence(result.error, evidenceOutput, input);
   const complete = parseEvidence(result.value);
   const inputError = cliEvidenceDeliveryInputError(input);
   if (inputError !== undefined) {
@@ -181,25 +184,52 @@ export const publishCliAnalysisEvidence = async (
     return projectFailure(inputError);
   }
   if (evidenceOutput === undefined) return complete;
-  // Project before publication so a view failure cannot commit an
-  // unreported bundle; publication then owns every post-commit outcome.
+  const published = await publishDeliveredEvidence(
+    complete,
+    evidenceOutput,
+    input,
+  );
+  if (!published.ok) return projectFailure(published.error);
+  return detail === "summary"
+    ? {
+        summary: published.value.delivered,
+        evidence_bundle: published.value.receipt,
+      }
+    : published.value.delivered;
+};
+
+/**
+ * Project the requested view, then publish the complete bundle. Projection
+ * runs first so a view failure cannot commit an unreported bundle;
+ * publication then owns every post-commit outcome.
+ */
+const publishDeliveredEvidence = async (
+  complete: Evidence,
+  evidenceOutput: string,
+  input: CliEvidenceDelivery,
+): Promise<
+  Result<
+    { readonly delivered: Evidence; readonly receipt: JsonValue },
+    AnalysisError
+  >
+> => {
   const delivered =
-    detail === "summary"
+    input.detail === "summary"
       ? inspectAnalysisViewValidated({
           source: { kind: "inline", evidence: complete },
           view: input.view ?? { kind: "summary" },
         })
       : ok(complete);
   if (!delivered.ok)
-    return projectFailure(delivered.error.retainPartialObservation(complete));
+    return err(delivered.error.retainPartialObservation(complete));
   // This projection answers the same direct invocation as its parent. Later
   // inspect_analysis_view calls own their own input and do not inherit it.
   const selected =
-    detail === "summary" && complete.caller_input_path !== undefined
+    input.detail === "summary" && complete.caller_input_path !== undefined
       ? withEvidenceCallerInputPath(delivered.value, complete.caller_input_path)
       : delivered.value;
   const inspectionSources = analysisEvidenceSources(complete);
-  if (!inspectionSources.ok) return projectFailure(inspectionSources.error);
+  if (!inspectionSources.ok) return inspectionSources;
   const published = await publishEvidenceDelivery({
     bundle: createEvidenceBundle([
       ...new Map(
@@ -211,23 +241,100 @@ export const publishCliAnalysisEvidence = async (
     complete,
     delivered: selected,
     outputPath: absoluteCallerPath(evidenceOutput),
-    operation,
-    signal,
+    operation: input.operation,
+    signal: input.signal,
   });
-  if (!published.ok) return projectFailure(published.error);
-  return detail === "summary"
-    ? {
-        summary: published.value.delivered,
-        evidence_bundle: {
-          ...(input.sensitiveValues?.some(
-            (literal) =>
-              literal !== "" &&
-              published.value.evidenceBundle.path.includes(literal),
-          )
-            ? {}
-            : { path: published.value.evidenceBundle.path }),
-          bytes: published.value.evidenceBundle.bytes,
+  if (!published.ok) return published;
+  const { path, bytes } = published.value.evidenceBundle;
+  return ok({
+    delivered: published.value.delivered,
+    receipt: {
+      ...(input.sensitiveValues?.some(
+        (literal) => literal !== "" && path.includes(literal),
+      )
+        ? {}
+        : { path }),
+      bytes,
+    },
+  });
+};
+
+const isJsonObject = (
+  value: JsonValue | undefined,
+): value is { readonly [key: string]: JsonValue } =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * A failure that carries partial Evidence publishes it to --evidence_output
+ * as a successful run would. The failure keeps its code, message and
+ * remediation; with summary detail, the inline partial observation becomes
+ * its summary view, and details.diagnostics.evidence_bundle names the file.
+ * Cancellation keeps its no-publication contract, raw provider observations
+ * stay inline, and a refused publication keeps the complete partial Evidence
+ * inline with details.diagnostics.evidence_bundle_error.
+ */
+const publishFailurePartialEvidence = async (
+  failure: JsonValue,
+  evidenceOutput: string,
+  input: CliEvidenceDelivery,
+): Promise<JsonValue> => {
+  if (
+    input.signal.aborted ||
+    !isJsonObject(failure) ||
+    failure.code === "cancelled" ||
+    !isJsonObject(failure.details) ||
+    failure.details.partial_observation === undefined
+  )
+    return failure;
+  const details = failure.details;
+  const diagnostics = isJsonObject(details.diagnostics)
+    ? details.diagnostics
+    : {};
+  let partial: Evidence;
+  try {
+    partial = parseEvidence(details.partial_observation);
+  } catch {
+    return failure;
+  }
+  const published = await publishDeliveredEvidence(
+    partial,
+    evidenceOutput,
+    input,
+  );
+  if (!published.ok) {
+    const refusal = projectAnalysisError(
+      redactExplicitFailure(published.error, input.sensitiveValues ?? []),
+    );
+    // A publication can commit before a later cancellation; keep its receipt.
+    const committed =
+      isJsonObject(refusal.details) && isJsonObject(refusal.details.diagnostics)
+        ? refusal.details.diagnostics.evidence_bundle
+        : undefined;
+    return {
+      ...failure,
+      details: {
+        ...details,
+        diagnostics: {
+          ...diagnostics,
+          ...(committed === undefined ? {} : { evidence_bundle: committed }),
+          evidence_bundle_error: {
+            code: refusal.code,
+            message: refusal.message,
+            limitation:
+              committed === undefined
+                ? "The partial Evidence was not published to --evidence_output; it remains complete in details.partial_observation."
+                : "The partial Evidence was published to --evidence_output before delivery stopped; it also remains complete in details.partial_observation.",
+          },
         },
-      }
-    : published.value.delivered;
+      },
+    };
+  }
+  return {
+    ...failure,
+    details: {
+      ...details,
+      partial_observation: published.value.delivered,
+      diagnostics: { ...diagnostics, evidence_bundle: published.value.receipt },
+    },
+  };
 };

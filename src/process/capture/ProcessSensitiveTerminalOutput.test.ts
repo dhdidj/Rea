@@ -4,6 +4,7 @@ import {
   sensitiveTerminalInputValues,
   redactTerminalChunks,
   redactRetainedTerminalFrames,
+  redactTerminalSerialization,
 } from "./ProcessSensitiveTerminalOutput.js";
 
 it("uses only explicitly sensitive input values, including ordinary line echo", () => {
@@ -51,4 +52,26 @@ it("preserves ordinary output when no sensitive input was declared", () => {
     "hello",
     " world",
   ]);
+});
+
+it("preserves ANSI styling commands when the secret matches color digits", () => {
+  const chunks = ["\u001b[31m1", "2\\u001b[0m"];
+  const result = redactTerminalChunks(chunks, ["12"]);
+  expect(result).toEqual(chunks);
+});
+
+it("keeps Unicode masking bounded and never retains the explicit value", () => {
+  const frames = [
+    { sequence: 0, at_ms: 1, data: "é", raw_data: "é" },
+  ];
+  redactRetainedTerminalFrames(frames, ["é"]);
+  expect(JSON.stringify(frames)).not.toContain("é");
+  expect(frames[0]?.data).toBe("*");
+  expect(Buffer.byteLength(frames[0]!.data)).toBe(1);
+});
+
+it("redacts visible ANSI replay text without modifying control sequences", () => {
+  const serialized = "\\u001b[31m12\\u001b[0m";
+  const result = redactTerminalSerialization(serialized, ["12"]);
+  expect(result).toBe("\\u001b[31m**\\u001b[0m");
 });

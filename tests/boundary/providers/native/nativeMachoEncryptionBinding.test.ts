@@ -1,9 +1,4 @@
-import {
-  appendFile,
-  open,
-  writeFile,
-  type FileHandle,
-} from "node:fs/promises";
+import { appendFile, open, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { machoImage } from "../../../../src/artifacts/apple/MachoImage.fixture.js";

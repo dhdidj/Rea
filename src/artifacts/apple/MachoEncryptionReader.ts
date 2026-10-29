@@ -57,9 +57,7 @@ export const readMachoEncryption = async (
   if (container.kind === "thin")
     return {
       status: "parsed",
-      slices: [
-        await readSlice(readAt, { offset: 0, size, fat: null }, budget),
-      ],
+      slices: [await readSlice(readAt, { offset: 0, size, fat: null }, budget)],
     };
   // Apple's hidden ARM64 slice is part of the file's coverage, so an
   // undecodable hidden row (a short read) leaves the slice set itself

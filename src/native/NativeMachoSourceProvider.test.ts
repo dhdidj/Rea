@@ -2,6 +2,7 @@ import { open, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
+import { ProviderCleanupError } from "../domain/providerCleanupError.js";
 import { NativeMacOSProvider } from "./NativeMacOSProvider.js";
 import { MachoCommandNamesLimitError } from "./MachoCommandNames.js";
 import {
@@ -9,10 +10,100 @@ import {
   nativeMachoTargetForFile,
 } from "../../tests/fixtures/nativeCommands.js";
 import { createTestTempDirectory } from "../../tests/fixtures/temporaryDirectory.js";
+import { inspectionImage } from "./NativeMachoInspection.fixture.js";
 
 const control = vi.hoisted(() => ({
   read: undefined as undefined | (() => Promise<never>),
 }));
+
+it.each([false, true])(
+  "retains verified inspection evidence through close retry (late cancellation: %s)",
+  async (cancelDuringClose) => {
+    const root = await createTestTempDirectory("rea-macho-completed-close-");
+    const path = join(root, "fixture.macho");
+    await writeFile(path, inspectionImage());
+    const target = await nativeMachoTargetForFile(path);
+    const probe = await open(path, "r");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    await probe.close();
+    const client = new NativeMacOSProvider(
+      {},
+      new NativeFixtureRunner({
+        lipo: `Non-fat file: ${path} is architecture: arm64\n`,
+      }),
+      "darwin",
+    ).createClient(target);
+    const controller = new AbortController();
+    const reason = new Error("cancelled during descriptor close");
+    const state = { failing: true, attempts: 0 };
+    const original = prototype.stat;
+    const stat = vi
+      .spyOn(prototype, "stat")
+      .mockImplementationOnce(async function (
+        this: FileHandle,
+        ...args: Parameters<FileHandle["stat"]>
+      ) {
+        const close = this.close.bind(this);
+        this.close = async () => {
+          state.attempts += 1;
+          if (state.failing) {
+            if (cancelDuringClose) controller.abort(reason);
+            throw new Error("controlled descriptor close failure");
+          }
+          await close();
+        };
+        return Reflect.apply(original, this, args);
+      });
+    onTestFinished(async () => {
+      stat.mockRestore();
+      state.failing = false;
+      await client.close();
+    });
+    const result = await client.execute(
+      "inspect_macho",
+      { native_command_timeout_ms: 5000 },
+      { signal: controller.signal },
+    );
+    if (result.ok) throw new Error("Expected cleanup failure");
+    expect(result.error).toBeInstanceOf(ProviderCleanupError);
+    if (!(result.error instanceof ProviderCleanupError))
+      throw new Error("Expected provider cleanup failure");
+    expect(result.error.cleanupIncomplete).toBe(true);
+    expect(result.error.cleanupResources).toEqual([path]);
+    expect(result.error.partialObservation).toMatchObject({
+      operation: "inspect_macho",
+      parameters: { native_command_timeout_ms: 5000 },
+      subject: { local_path: path, digest: { sha256: target.sha256 } },
+      normalized_result: { provenance: expect.any(Array) },
+      locations: expect.any(Array),
+    });
+    if (cancelDuringClose) {
+      expect(result.error.completedObservation).toBeUndefined();
+      expect(result.error.cleanupPrimary).toMatchObject({
+        _tag: "AnalysisCancelledError",
+        cause: reason,
+        partialObservation: result.error.partialObservation,
+      });
+    } else {
+      expect(result.error.cleanupPrimary).toBeUndefined();
+      expect(result.error.completedObservation).toEqual(
+        result.error.partialObservation,
+      );
+    }
+    expect(
+      projectAnalysisError(result.error).details?.partial_observation,
+    ).toEqual(result.error.partialObservation);
+    state.failing = false;
+    expect((await client.close()).ok).toBe(true);
+    expect(state.attempts).toBe(2);
+    expect(result.error.cleanupIncomplete).toBe(false);
+    expect(result.error.partialObservation).toBeDefined();
+    if (cancelDuringClose)
+      expect(result.error.cleanupPrimary?.partialObservation).toEqual(
+        result.error.partialObservation,
+      );
+  },
+);
 vi.mock("./MachoCommandNames.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("./MachoCommandNames.js")>();

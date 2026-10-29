@@ -36,6 +36,7 @@ import { NativeUiCleanupError } from "./NativeUiCleanupError.js";
 import { LldbCallTracer, type NativeCallTracer } from "./LldbCallTracer.js";
 import { observeNativeCalls } from "./NativeCallObservation.js";
 import { realpath } from "node:fs/promises";
+import { createAnalysisExecutionEvidence } from "../domain/analysisObservation.js";
 
 import { z } from "zod";
 
@@ -629,7 +630,7 @@ class NativeMacOSClient implements AnalysisClient {
     const timeoutMs = timeout.timeoutMs;
     switch (operation) {
       case "inspect_macho":
-        return this.#inspectMacho(signal, timeoutMs);
+        return this.#inspectMacho(parameters, signal, timeoutMs);
       case "inspect_signature":
         return this.#inspectSignature(signal, timeoutMs);
       case "inspect_plist":
@@ -1253,6 +1254,7 @@ class NativeMacOSClient implements AnalysisClient {
   }
 
   async #inspectMacho(
+    parameters: Readonly<Record<string, JsonValue>>,
     signal: AbortSignal | undefined,
     timeoutMs: number,
   ): Promise<Result<NativeObservation, AnalysisError>> {
@@ -1314,7 +1316,7 @@ class NativeMacOSClient implements AnalysisClient {
         ),
       );
     } catch (cause: unknown) {
-      return err(nativeMachoSourceFailure(cause, this.target.path));
+      return err(nativeMachoSourceFailure(cause, this.target, parameters));
     }
   }
 
@@ -1515,22 +1517,45 @@ const nativeMachoSourcePrimary = (
 
 const nativeMachoSourceFailure = (
   cause: unknown,
-  path: string,
+  target: BinaryTarget,
+  parameters: Readonly<Record<string, JsonValue>>,
 ): AnalysisError => {
   if (cause instanceof ArtifactReaderFailure && cause.cleanup !== undefined) {
     const physical =
       cause instanceof ArtifactFileCleanupFailure
         ? cause.fileCleanupFailure
         : undefined;
+    // The file operation only completes after the producer result has passed
+    // the final identity check. Its callback is owned by #inspectMacho.
+    const outcome =
+      physical?.outcome.kind === "completed"
+        ? (physical.outcome.value as Result<NativeObservation, AnalysisError>)
+        : undefined;
+    const observation =
+      outcome?.ok === true
+        ? createAnalysisExecutionEvidence(
+            "inspect_macho",
+            parameters,
+            {
+              ...createAnalysisExecution(outcome.value.result, IDENTITY, {
+                limitations: outcome.value.limitations,
+                locations: outcome.value.locations,
+              }),
+              subject: target,
+            },
+            "observed",
+          )
+        : undefined;
     const completionCancellation =
       physical?.completionCancellation === undefined
         ? undefined
         : new AnalysisCancelledError("inspect_macho", {
             cause: physical.completionCancellation.reason,
+            partialObservation: observation,
           });
     const previous =
       physical?.outcome.kind === "failed"
-        ? nativeMachoSourcePrimary(artifactFilePrimaryFacts(cause), path)
+        ? nativeMachoSourcePrimary(artifactFilePrimaryFacts(cause), target.path)
         : physical?.outcome.kind === "completed"
           ? (nativeMachoCompletedFailure(physical.outcome.value) ??
             completionCancellation)
@@ -1553,12 +1578,20 @@ const nativeMachoSourceFailure = (
             }
           : {}),
       },
-      { operation: "inspect_macho", cause, cleanupPrimary: previous },
+      {
+        operation: "inspect_macho",
+        cause,
+        cleanupPrimary: previous,
+        partialObservation: observation,
+        ...(completionCancellation === undefined && observation !== undefined
+          ? { completedObservation: observation }
+          : {}),
+      },
     );
     bindArtifactFileCleanup(cause, failure);
     return failure;
   }
-  return nativeMachoSourcePrimary(artifactFilePrimaryFacts(cause), path);
+  return nativeMachoSourcePrimary(artifactFilePrimaryFacts(cause), target.path);
 };
 
 interface NativeObservation {

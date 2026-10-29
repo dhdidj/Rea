@@ -69,6 +69,43 @@ const harmonyFixture = async () => {
   return { bytes: await writer.close(), javascriptPaths };
 };
 
+/** Assert the projected Harmony graph for one archive format through both adapters. */
+const expectHarmonyProjection = (
+  graph: HarmonyApplicationProjectionResult,
+  format: string,
+  sha256: string,
+  javascriptPaths: readonly string[],
+): void => {
+  expect(graph).toMatchObject({
+    root_format: format,
+    root_sha256: sha256,
+    coverage: { status: "complete-within-inventory" },
+    unavailable_components: [],
+    unclassified_components: [
+      expect.objectContaining({
+        path: ".pages.info",
+        sha256: createHash("sha256")
+          .update("page metadata fixture")
+          .digest("hex"),
+      }),
+      expect.objectContaining({
+        path: "pkgContextInfo.json",
+        sha256: createHash("sha256").update("{}").digest("hex"),
+      }),
+    ],
+  });
+  expect(graph.components.manifests.map(({ path: member }) => member)).toEqual([
+    "module.json",
+  ]);
+  expect(graph.components.bytecode.map(({ path: member }) => member)).toEqual([
+    "ets/modules.abc",
+  ]);
+  expect(graph.components.javascript.map(({ path: member }) => member)).toEqual(
+    javascriptPaths,
+  );
+  expect(graph.runtime_families).toEqual(["ark", "javascript"]);
+};
+
 test("preserves Harmony archive formats through the public CLI/MCP lifecycle", async ({
   cli,
   workspace,
@@ -159,34 +196,7 @@ test("preserves Harmony archive formats through the public CLI/MCP lifecycle", a
       const graph = harmonyApplicationProjectionResultSchema.parse(
         parseEvidence(projected.structuredContent).normalized_result,
       );
-      expect(graph).toMatchObject({
-        root_format: format,
-        root_sha256: sha256,
-        coverage: { status: "complete-within-inventory" },
-        unavailable_components: [],
-        unclassified_components: [
-          expect.objectContaining({
-            path: ".pages.info",
-            sha256: createHash("sha256")
-              .update("page metadata fixture")
-              .digest("hex"),
-          }),
-          expect.objectContaining({
-            path: "pkgContextInfo.json",
-            sha256: createHash("sha256").update("{}").digest("hex"),
-          }),
-        ],
-      });
-      expect(
-        graph.components.manifests.map(({ path: member }) => member),
-      ).toEqual(["module.json"]);
-      expect(
-        graph.components.bytecode.map(({ path: member }) => member),
-      ).toEqual(["ets/modules.abc"]);
-      expect(
-        graph.components.javascript.map(({ path: member }) => member),
-      ).toEqual(javascriptPaths);
-      expect(graph.runtime_families).toEqual(["ark", "javascript"]);
+      expectHarmonyProjection(graph, format, sha256, javascriptPaths);
       const projectionInput = workspace.path("projection-input.json");
       await writeFile(
         projectionInput,

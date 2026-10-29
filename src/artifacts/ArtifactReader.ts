@@ -178,10 +178,12 @@ export interface ArtifactReader {
     | "asar"
     | "godot-pck"
     | "unityfs"
+    | "uimage"
     | "pyinstaller"
     | "node-sea"
     | "intel-hex"
     | "srec"
+    | "esp-image"
     | "file";
   entries(
     signal?: AbortSignal,

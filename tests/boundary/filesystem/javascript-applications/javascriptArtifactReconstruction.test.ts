@@ -24,6 +24,7 @@ import { immutableArtifactGraph } from "../../../fixtures/javascriptArtifactGrap
 import { createJavaScriptSemanticGraphProjection } from "../../../../src/application/javascript/JavaScriptSemanticGraphBuilder.js";
 import type { JavaScriptModuleSemanticIr } from "../../../../src/domain/javascript/javascriptModuleSemanticIr.js";
 import type { JavaScriptStaticAnalysis } from "../../../../src/domain/javascript/javascriptStaticAnalysisTypes.js";
+import { analyzeJavaScriptStaticSource } from "../../../../src/domain/javascript/javascriptStaticAnalysis.js";
 import type { JavaScriptArtifactFile } from "../../../../src/domain/javascript/javascriptArtifactFiles.js";
 import { completeJavaScriptAnalysisSteps } from "../../../../src/application/javascript/JavaScriptAnalysisControl.js";
 import { buildImmutableJavaScriptArtifactGraphSteps } from "../../../../src/application/javascript/JavaScriptArtifactGraphBuilder.js";
@@ -584,7 +585,22 @@ it("keeps IPC pairings uncertain when source examination is incomplete", async (
         },
       },
     };
-    for (const javascript of [historicalStatic, limitedStatic]) {
+    const wrapperLimitedStatic = {
+      ...hiddenStatic,
+      analysis_coverage: {
+        ...hiddenStatic.analysis_coverage!,
+        examination: {
+          ...hiddenStatic.analysis_coverage!.examination,
+          status: "limited" as const,
+          electron_call_paths_limited: true,
+        },
+      },
+    };
+    for (const javascript of [
+      historicalStatic,
+      limitedStatic,
+      wrapperLimitedStatic,
+    ]) {
       const partialAnalysis = {
         ...analysis,
         files: analysis.files.map((item) =>
@@ -664,6 +680,65 @@ it("keeps IPC pairings uncertain when source examination is incomplete", async (
       paired_renderer_transmissions: 0,
       ambiguous_renderer_transmissions: 1,
     });
+  } finally {
+    await reader.close();
+  }
+});
+
+it("does not pair IPC when the Electron wrapper walk hits its depth limit", async () => {
+  const root = await createTestTempDirectory("rea-limited-electron-ipc-");
+  const source = (depth: number) => {
+    const nested =
+      Array.from({ length: depth }, (_, index) => `level${index}:{`).join("") +
+      'deep:()=>{const register=(ipc)=>ipc.handle("rea:ping",()=>false);register(e.ipcMain)}' +
+      "}".repeat(depth);
+    return `const e=require("electron");e.contextBridge.exposeInMainWorld("desktop",{${nested}});`;
+  };
+  // Without the traversal limit, the same wrapper reveals a competing handler.
+  const shallow = analyzeJavaScriptStaticSource(source(2));
+  expect(shallow.electron.ipc).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        side: "main",
+        operation: "handle",
+        channel: "rea:ping",
+      }),
+    ]),
+  );
+  await writeFixtureFiles(root, {
+    "package.json": JSON.stringify({ main: "main.js" }),
+    "main.js":
+      'const { ipcMain } = require("electron"); ipcMain.handle("rea:ping", () => true);',
+    "preload.js":
+      'const { ipcRenderer } = require("electron"); ipcRenderer.invoke("rea:ping");',
+    "limited.js": source(130),
+  });
+  const snapshot = await scanCanonicalArtifactInventory(root, {});
+  const reader = createJavaScriptArtifactReader(root, "directory");
+  try {
+    const files = await readJavaScriptArtifactFiles(reader, snapshot);
+    const { analysis } = await analyzeArtifactFiles(files);
+    const limited = analysis.files.find(
+      ({ file }) => file.path === "limited.js",
+    );
+    expect(limited?.javascript?.analysis_coverage?.examination).toMatchObject({
+      electron_call_paths_limited: true,
+      semantic_resource_limits: [],
+    });
+    expect(limited?.javascript?.electron.ipc).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: "rea:ping" }),
+      ]),
+    );
+    const { electronSummary } = await completeJavaScriptAnalysisSteps(
+      buildImmutableJavaScriptArtifactGraphSteps(snapshot, files, analysis),
+    );
+    expect(electronSummary.ipc).toMatchObject({
+      paired_renderer_transmissions: 0,
+    });
+    expect(
+      electronSummary.ipc.ambiguous_renderer_transmissions,
+    ).toBeGreaterThanOrEqual(1);
   } finally {
     await reader.close();
   }

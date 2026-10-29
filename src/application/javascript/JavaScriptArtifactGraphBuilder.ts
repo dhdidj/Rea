@@ -140,6 +140,8 @@ function* buildJavaScriptArtifactGraphInputSteps(
       (analyzed.javascript === null ||
         analyzed.javascript.analysis_coverage === undefined ||
         analyzed.javascript.analysis_coverage.examination
+          .electron_call_paths_limited ||
+        analyzed.javascript.analysis_coverage.examination
           .semantic_resource_limits.length > 0)
     )
       ipcSourceGap = true;

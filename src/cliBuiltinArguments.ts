@@ -197,8 +197,10 @@ const MCP_ADD_VALUED_OPTIONS = ["--agent", "--command", "-c"] as const;
  * registration helper consumes an agent or command only when the next token
  * is truthy, so a trailing valued option (or one followed by another flag)
  * silently falls back to the defaults and registers anyway, unlike REA-owned
- * commands whose parser rejects a missing value. REA rejects that here, in
- * its own entry point, before Incur runs, so no runner is invoked and no
+ * commands whose parser rejects a missing value. An equals form with an
+ * empty remainder (`--agent=`) is the same missing value: Incur sees no
+ * value to consume and registers with the defaults. REA rejects that here,
+ * in its own entry point, before Incur runs, so no runner is invoked and no
  * client settings are written. Help requests are left alone: Incur strips
  * help flags before command parsing and shows help without side effects.
  * A lone `-` still counts as a value, matching the parser's treatment of a
@@ -213,6 +215,10 @@ export const findMcpAddMissingValue = (
   if (rest.includes("--help") || rest.includes("-h")) return undefined;
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index]!;
+    const emptyEquals = MCP_ADD_VALUED_OPTIONS.find(
+      (candidate) => token === `${candidate}=`,
+    );
+    if (emptyEquals !== undefined) return emptyEquals;
     const option = MCP_ADD_VALUED_OPTIONS.find(
       (candidate) => token === candidate,
     );

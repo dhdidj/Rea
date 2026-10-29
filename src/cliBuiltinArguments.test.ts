@@ -60,6 +60,27 @@ describe("findMcpAddMissingValue", () => {
     );
   });
 
+  it("rejects an equals form with an empty value", () => {
+    expect(findMcpAddMissingValue(["mcp", "add", "--agent="])).toBe("--agent");
+    expect(findMcpAddMissingValue(["mcp", "add", "--command="])).toBe(
+      "--command",
+    );
+    expect(findMcpAddMissingValue(["mcp", "add", "-c="])).toBe("-c");
+    expect(
+      findMcpAddMissingValue(["mcp", "add", "--agent", "amp", "--command="]),
+    ).toBe("--command");
+  });
+
+  it("still accepts non-empty equals forms", () => {
+    expect(
+      findMcpAddMissingValue(["mcp", "add", "--agent=amp"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["mcp", "add", "--command=node x.mjs"]),
+    ).toBeUndefined();
+    expect(findMcpAddMissingValue(["mcp", "add", "-cfoo"])).toBeUndefined();
+  });
+
   it("leaves help requests alone", () => {
     expect(findMcpAddMissingValue(["mcp", "add", "--help"])).toBeUndefined();
     expect(

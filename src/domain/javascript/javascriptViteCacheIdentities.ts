@@ -94,10 +94,15 @@ const joinIdentity = (
     right.inheritedArrayPrototype === true
       ? true
       : undefined;
+  const intrinsicPrototype =
+    left.intrinsicPrototype === true || right.intrinsicPrototype === true
+      ? true
+      : undefined;
   return allocation === left.allocation &&
     owner === left.owner &&
     children === left.children &&
-    inheritedArrayPrototype === left.inheritedArrayPrototype
+    inheritedArrayPrototype === left.inheritedArrayPrototype &&
+    intrinsicPrototype === left.intrinsicPrototype
     ? left
     : {
         allocation,
@@ -106,6 +111,7 @@ const joinIdentity = (
         ...(inheritedArrayPrototype === true
           ? { inheritedArrayPrototype }
           : {}),
+        ...(intrinsicPrototype === true ? { intrinsicPrototype } : {}),
       };
 };
 
@@ -768,6 +774,9 @@ export class ViteCacheIdentities {
           ...(family.fact.inheritedArrayPrototype === true
             ? { inheritedArrayPrototype: true as const }
             : {}),
+          ...(family.fact.intrinsicPrototype === true
+            ? { intrinsicPrototype: true as const }
+            : {}),
         };
       }
     }
@@ -780,6 +789,12 @@ export class ViteCacheIdentities {
       owner,
       children: owner,
       ...(source.inheritedArrayPrototype === true
+        ? { inheritedArrayPrototype: true as const }
+        : {}),
+      ...(source.intrinsicPrototype === true
+        ? { intrinsicPrototype: true as const }
+        : {}),
+      ...(input.kind === "mapped-family" && source.intrinsicPrototype === true
         ? { inheritedArrayPrototype: true as const }
         : {}),
     };
@@ -857,8 +872,11 @@ export class ViteCacheIdentities {
               );
           } else {
             const selected = this.project(table, [key], input.call);
-            this.connect(result, { kind: "family", source: selected });
-            this.connect(elementFamily, { kind: "family", source: selected });
+            this.connect(result, { kind: "mapped-family", source: selected });
+            this.connect(elementFamily, {
+              kind: "mapped-family",
+              source: selected,
+            });
             {
               const inherited = this.vertex({});
               this.connect(inherited, {
@@ -1091,7 +1109,7 @@ export class ViteCacheIdentities {
         vertex.seed = {
           allocation: null,
           owner: undefined,
-          inheritedArrayPrototype: true,
+          intrinsicPrototype: true,
         };
         this.enqueue(vertex);
         continue;
@@ -1310,6 +1328,9 @@ export class ViteCacheIdentities {
         ...(source.inheritedArrayPrototype === true
           ? { inheritedArrayPrototype: true as const }
           : {}),
+        ...(source.intrinsicPrototype === true
+          ? { intrinsicPrototype: true as const }
+          : {}),
       };
     if (
       input.key === "__proto__" &&
@@ -1360,12 +1381,21 @@ export class ViteCacheIdentities {
     if (!selected.listeners.has(target)) selected.listeners.add(target);
     const fact = selected.fact;
     if (fact === undefined) return undefined;
+    if (
+      allocation.helperResult !== undefined &&
+      fact.intrinsicPrototype === true
+    )
+      return { ...fact, inheritedArrayPrototype: true };
     return fact.allocation === null && fact.owner === undefined
       ? {
           allocation: null,
           owner: source.owner,
           ...(source.inheritedArrayPrototype === true
             ? { inheritedArrayPrototype: true as const }
+            : {}),
+          ...(fact.intrinsicPrototype === true ||
+          source.intrinsicPrototype === true
+            ? { intrinsicPrototype: true as const }
             : {}),
         }
       : fact;

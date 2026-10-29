@@ -10,6 +10,32 @@ const candidates = (source: string) =>
     .map(({ specifier }) => specifier);
 
 describe("Vite inherited dependency values", () => {
+  it("keeps unrelated direct intrinsic writes and prototype assignments precise", () => {
+    expect(
+      candidates(`Array.prototype[2] = 1; __vite__mapDeps([,0]);`),
+    ).toEqual(["./first.js"]);
+    expect(
+      candidates(
+        `const getProto = Object.getPrototypeOf; const proto = {}; const box = {}; box.object = Object.create(proto); const captured = getProto(box.object); Object.setPrototypeOf(box.object, Array.prototype); captured.label = 1; __vite__mapDeps([0]);`,
+      ),
+    ).toEqual(["./first.js"]);
+    expect(
+      candidates(
+        `Object.defineProperty(Array.prototype, "1", {get() { this[0] = "./last.js"; return 1; }, configurable: true}); __vite__mapDeps([1], void 0, []); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, "./first.js"]);
+    const source =
+      helper.replace(
+        '["./first.js","./last.js"]',
+        '["./first.js",null,"./last.js"]',
+      ) +
+      `Object.defineProperty(Array.prototype,"1",{get(){return 1},configurable:true}); __vite__mapDeps([1,2]);`;
+    expect(
+      analyzeJavaScriptStaticSource(source)
+        .references.filter(({ kind }) => kind === "vite-table-candidate")
+        .map(({ specifier }) => specifier),
+    ).toEqual([null, "./last.js"]);
+  });
   it("distinguishes independent owned values from inherited prototypes", () => {
     for (const key of ["constructor", "__proto__"]) {
       const effect = `const values=__vite__mapDeps([${JSON.stringify(key)}], void 0, {[${JSON.stringify(key)}]: {}}); opaque(values); __vite__mapDeps([0]);`;
@@ -31,6 +57,11 @@ describe("Vite inherited dependency values", () => {
       expect(candidates(effect)).toEqual([null, null]);
     }
     const effect = `const values=__vite__mapDeps(['foo'], void 0, {foo:Array.prototype}); opaque(values); __vite__mapDeps([0]);`;
+    expect(
+      candidates(
+        `const values=__vite__mapDeps(['foo'], void 0, {foo:Array.prototype}); opaque(values[0]); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, null]);
     expect(
       Array.from(
         runInNewContext(helper + effect, {

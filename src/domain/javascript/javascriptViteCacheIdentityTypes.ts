@@ -33,6 +33,8 @@ export interface ViteCacheIdentity {
   readonly children?: string | null | undefined;
   /** A reachable value may be an inherited Array prototype or its constructor. */
   readonly inheritedArrayPrototype?: true;
+  /** Intrinsic value that becomes exposed if selected by the helper. */
+  readonly intrinsicPrototype?: true;
 }
 
 export interface Vertex {
@@ -56,7 +58,12 @@ export type Input =
       readonly call: t.CallExpression | t.OptionalCallExpression;
     }
   | {
-      readonly kind: "alias" | "family" | "copy-family" | "iteration-family";
+      readonly kind:
+        | "alias"
+        | "family"
+        | "mapped-family"
+        | "copy-family"
+        | "iteration-family";
       readonly source: Vertex;
     }
   | {

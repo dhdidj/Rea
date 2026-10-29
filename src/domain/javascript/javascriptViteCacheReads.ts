@@ -16,6 +16,10 @@ const ARRAY_READS = new Set([
 
 export interface ViteCacheReadProof {
   readonly recordWrite: (path: readonly (string | null)[]) => void;
+  readonly sharedWriteAffects: (
+    method: string | null,
+    capturedIntrinsic?: boolean,
+  ) => boolean;
   readonly isReadSteps: (
     receiver: t.Node,
     method: string | null,
@@ -42,13 +46,42 @@ export function* createViteCacheReadProofSteps(
     if (dense) denseOwners.add(owner);
   }
   const writes = new SemanticPropertyPathCoverage();
+  const sharedWrites = new SemanticPropertyPathCoverage();
+  let hasSharedWrites = false;
+  let hasAmbientSharedWrites = false;
+  for (const { path } of state.ambientWriteEffects) {
+    if (examined++ % 1024 === 0) yield;
+    if (
+      (path[0] === "global" || path[0] === null) &&
+      (path[1] == null || path[1] === "Array" || path[1] === "Object") &&
+      (path[2] == null || path[2] === "prototype")
+    )
+      hasAmbientSharedWrites = true;
+  }
+  const ambientSharedWrite = (key: string): boolean =>
+    ["Array", "Object"].some((namespace) =>
+      state.ambientWrites.covers(["global", namespace, "prototype", key]),
+    );
   return {
     recordWrite(path): void {
       const [kind, owner, key] = path;
       if (kind === "cache" || kind === "unknown")
         writes.retain([owner ?? null, key ?? null]);
-      else if (kind === "inherited-array-prototype")
+      else if (kind === "inherited-array-prototype") {
         writes.retain([null, key ?? null]);
+        sharedWrites.retain([key ?? null]);
+        hasSharedWrites = true;
+      }
+    },
+    sharedWriteAffects(method, capturedIntrinsic = false): boolean {
+      if (method === null) return hasSharedWrites || hasAmbientSharedWrites;
+      return (
+        (!capturedIntrinsic &&
+          (sharedWrites.covers([method]) || ambientSharedWrite(method))) ||
+        (method === "slice" &&
+          (sharedWrites.covers(["constructor"]) ||
+            ambientSharedWrite("constructor")))
+      );
     },
     *isReadSteps(
       receiver,

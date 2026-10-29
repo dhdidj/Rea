@@ -26,6 +26,14 @@ describe("Vite inherited dependency values", () => {
     }
     const safe = `__vite__mapDeps([0]); const cache=__vite__mapDeps.f; const proto=cache.__proto__; proto.unrelated=function(){}; cache.slice(); __vite__mapDeps([0]);`;
     expect(candidates(safe)).toEqual(["./first.js", "./first.js"]);
+    const nested = `__vite__mapDeps([0]); const cache=__vite__mapDeps.f; const proto=cache.__proto__; proto.slice=function(){this[0]='./last.js'}; {const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=['./second.js'])))=>i.map(i=>d[i]); __vite__mapDeps([0]); __vite__mapDeps.f.slice(); __vite__mapDeps([0]);}`;
+    expect(candidates(nested)).toEqual([null, null, null]);
+    expect(Array.from(runInNewContext(helper + nested))).toEqual(["./last.js"]);
+    const ambient = nested.replace(
+      "proto.slice=function()",
+      "Array.prototype.slice=function()",
+    );
+    expect(candidates(ambient)).toEqual([null, null, null]);
   });
   it("copies enumerable prototype values without copying prototype identity", () => {
     const init = `const proto=__vite__mapDeps(['__proto__'])[0];`;

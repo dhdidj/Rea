@@ -932,6 +932,11 @@ function* retainCallEffectsSteps(
       const identity = identities.read(direct.receiver);
       invalidate(identity?.owner);
       if (
+        identity?.allocation?.kind === "cache" &&
+        reads.sharedWriteAffects(direct.method)
+      )
+        invalidate(null);
+      if (
         identity?.inheritedArrayPrototype === true ||
         identity?.intrinsicPrototype === true
       )
@@ -958,6 +963,11 @@ function* retainCallEffectsSteps(
     ))
   ) {
     invalidate(receiver?.owner);
+    if (
+      receiver?.allocation?.kind === "cache" &&
+      reads.sharedWriteAffects(method, true)
+    )
+      invalidate(null);
     if (
       receiver?.inheritedArrayPrototype === true ||
       receiver?.intrinsicPrototype === true

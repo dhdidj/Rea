@@ -346,6 +346,26 @@ export class ViteCacheProperties {
     return false;
   }
 
+  /** Prove a selected object property remains owned at this read. */
+  *ownsSelectionSteps(
+    allocation: ViteCacheAllocation,
+    key: string,
+    read: t.Node,
+    target: Vertex,
+  ): Generator<void, boolean> {
+    const node = allocation.node;
+    if (t.isObjectExpression(node)) {
+      if (!(yield* semanticObjectExpressionDefinesKeySteps(node, key)))
+        return false;
+    } else if (t.isArrayExpression(node)) {
+      const index = semanticArrayIndex(key);
+      if (index === null || node.elements[index] == null) return false;
+      const firstSpread = yield* this.firstArraySpreadSteps(node);
+      if (firstSpread >= 0 && index >= firstSpread) return false;
+    } else return false;
+    return !(yield* this.prototypeChangedSteps(allocation, read, target));
+  }
+
   private *notifyPrototypeReadersSteps(
     allocation: ViteCacheAllocation,
   ): Generator<void> {
@@ -765,6 +785,21 @@ export class ViteCacheProperties {
   ): Generator<void> {
     const index = semanticArrayIndex(key);
     if (index === null) return;
+    const firstSpread = yield* this.firstArraySpreadSteps(node);
+    if (firstSpread >= 0 && index >= firstSpread) slot.seed = UNKNOWN;
+    else {
+      const element = node.elements[index];
+      if (element !== null && element !== undefined)
+        this.graph.connect(slot, {
+          kind: "alias",
+          source: this.graph.normalize(element),
+        });
+    }
+  }
+
+  private *firstArraySpreadSteps(
+    node: t.ArrayExpression,
+  ): Generator<void, number> {
     let firstSpread = this.firstArraySpreads.get(node);
     if (firstSpread === undefined) {
       firstSpread = -1;
@@ -777,15 +812,7 @@ export class ViteCacheProperties {
       }
       this.firstArraySpreads.set(node, firstSpread);
     }
-    if (firstSpread >= 0 && index >= firstSpread) slot.seed = UNKNOWN;
-    else {
-      const element = node.elements[index];
-      if (element !== null && element !== undefined)
-        this.graph.connect(slot, {
-          kind: "alias",
-          source: this.graph.normalize(element),
-        });
-    }
+    return firstSpread;
   }
   private *callSlotSteps(
     slot: Vertex,

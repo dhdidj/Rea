@@ -708,6 +708,48 @@ export class ViteCacheIdentities {
       return yield* this.helperResultSteps(source, input, vertex);
     if (input.kind === "select")
       return yield* this.selectSteps(source, input, vertex);
+    if (input.kind === "inherited-selection") {
+      const allocation = source.allocation;
+      const owns =
+        allocation !== null &&
+        (yield* this.properties.ownsSelectionSteps(
+          allocation,
+          input.key,
+          input.read,
+          vertex,
+        ));
+      const original =
+        allocation !== null &&
+        (allocation.kind === "container" || allocation.kind === "cache")
+          ? yield* this.properties.slotSteps(allocation, input.key)
+          : undefined;
+      original?.listeners.add(vertex);
+      const selected = original?.fact;
+      if (original !== undefined && selected === undefined) return undefined;
+      const unknownSelectedValue = selected?.allocation === null;
+      const inheritedSpecial =
+        !owns && (input.key === "constructor" || input.key === "__proto__");
+      const unknownTable =
+        !owns &&
+        (allocation === null ||
+          allocation.kind === "foreign" ||
+          (allocation.kind === "container" &&
+            !t.isArrayExpression(allocation.node) &&
+            !t.isObjectExpression(allocation.node)));
+      const modified =
+        allocation !== null &&
+        (yield* this.properties.prototypeChangedSteps(
+          allocation,
+          input.read,
+          vertex,
+        ));
+      return unknownSelectedValue ||
+        inheritedSpecial ||
+        unknownTable ||
+        modified
+        ? { allocation: null, owner: undefined, inheritedArrayPrototype: true }
+        : FOREIGN;
+    }
     if (input.kind === "prototype")
       return yield* this.prototypeSteps(source, input.read, vertex);
     if (input.kind === "alias") return source;
@@ -814,11 +856,23 @@ export class ViteCacheIdentities {
                 evaluateSemanticExpression(index, this.state, input.call),
               );
           } else {
-            if (key === "__proto__" || key === "constructor")
-              inheritedValue = true;
             const selected = this.project(table, [key], input.call);
             this.connect(result, { kind: "family", source: selected });
             this.connect(elementFamily, { kind: "family", source: selected });
+            {
+              const inherited = this.vertex({});
+              this.connect(inherited, {
+                kind: "inherited-selection",
+                source: table,
+                key,
+                read: input.call,
+              });
+              this.connect(result, { kind: "family", source: inherited });
+              this.connect(elementFamily, {
+                kind: "family",
+                source: inherited,
+              });
+            }
           }
         }
       }
@@ -1011,6 +1065,35 @@ export class ViteCacheIdentities {
       const helper = this.helperValues.get(expression);
       if (helper !== undefined) {
         this.connect(vertex, { kind: "alias", source: helper });
+        continue;
+      }
+      // The intrinsic constructor and its prototype can reach the shared array
+      // prototype even when a caller stores them under an arbitrary own key.
+      const globalConstructor =
+        t.isIdentifier(expression) &&
+        (expression.name === "Array" || expression.name === "Object") &&
+        resolveSemanticBindingState(this.state, expression, expression.name) ===
+          undefined;
+      const globalMember =
+        (t.isMemberExpression(expression) ||
+          t.isOptionalMemberExpression(expression)) &&
+        t.isIdentifier(expression.object, { name: "globalThis" }) &&
+        resolveSemanticBindingState(
+          this.state,
+          expression.object,
+          "globalThis",
+        ) === undefined &&
+        ["Array", "Object"].includes(
+          semanticStaticPropertyKey(expression.property, expression.computed) ??
+            "",
+        );
+      if (globalConstructor || globalMember) {
+        vertex.seed = {
+          allocation: null,
+          owner: undefined,
+          inheritedArrayPrototype: true,
+        };
+        this.enqueue(vertex);
         continue;
       }
       if (t.isForOfStatement(expression)) {

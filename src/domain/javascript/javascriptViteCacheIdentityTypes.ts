@@ -69,6 +69,12 @@ export type Input =
       readonly source: Vertex;
       readonly key: Key;
       readonly read: t.Node;
+    }
+  | {
+      readonly kind: "inherited-selection";
+      readonly source: Vertex;
+      readonly key: string;
+      readonly read: t.Node;
     };
 
 /** Exposure can refer directly to an already normalized selected-table value. */

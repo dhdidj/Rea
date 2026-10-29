@@ -67,6 +67,9 @@ describe("Vite inherited dependency values", () => {
         .map(({ specifier }) => specifier),
     ).toEqual([null, "./last.js"]);
   });
+});
+
+describe("Vite selected table values", () => {
   it("distinguishes independent owned values from inherited prototypes", () => {
     for (const key of ["constructor", "__proto__"]) {
       const effect = `const values=__vite__mapDeps([${JSON.stringify(key)}], void 0, {[${JSON.stringify(key)}]: {}}); opaque(values); __vite__mapDeps([0]);`;
@@ -145,6 +148,9 @@ describe("Vite inherited dependency values", () => {
       ),
     ).toEqual(["./first.js", "./first.js"]);
   });
+});
+
+describe("Vite inherited prototype and iteration effects", () => {
   it("retains possible inherited prototype effects separately from table elements", () => {
     const effect = `const key="__proto__"; const proto=__vite__mapDeps([key])[0]; proto.map=function(){return ["./last.js"]}; __vite__mapDeps([0]);`;
     expect(Array.from(runInNewContext(helper + effect))).toEqual(["./last.js"]);

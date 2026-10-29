@@ -3,6 +3,49 @@ import { createHash } from "node:crypto";
 import { readMachoCommandNames } from "./MachoCommandNames.js";
 import { projectMachoBinary } from "./MachoBinaryProjection.js";
 
+it("owns retained command bytes independently of Buffer-backed read windows", async () => {
+  const paddedSize = 256 * 1024;
+  const image = Buffer.alloc(32 + paddedSize * 2 + 24);
+  image.writeUInt32LE(0xfeedfacf, 0);
+  image.writeUInt32LE(0x0100000c, 4);
+  image.writeUInt32LE(3, 16);
+  image.writeUInt32LE(paddedSize * 2 + 24, 20);
+  const rpath = 32;
+  image.writeUInt32LE(0x8000001c, rpath);
+  image.writeUInt32LE(paddedSize, rpath + 4);
+  image.writeUInt32LE(12, rpath + 8);
+  const fileset = rpath + paddedSize;
+  image.writeUInt32LE(0x80000035, fileset);
+  image.writeUInt32LE(paddedSize, fileset + 4);
+  image.writeUInt32LE(32, fileset + 24);
+  image.write("x", fileset + 32);
+  const uuid = fileset + paddedSize;
+  image.writeUInt32LE(0x1b, uuid);
+  image.writeUInt32LE(24, uuid + 4);
+  image.fill(0x42, uuid + 8, uuid + 24);
+
+  // Buffer.subarray and Buffer.slice both share the caller's backing store.
+  const result = await readMachoCommandNames(
+    async (offset, size) => image.subarray(offset, offset + size),
+    image.length,
+    paddedSize,
+    3,
+  );
+  const path = result.commands[0]!.commandString!;
+  const entry = result.commands[1]!.fileset!.entryId;
+  const id = result.commands[2]!.uuid!;
+  expect(path).toHaveLength(0);
+  expect([...entry]).toEqual([0x78]);
+  expect([...id]).toEqual(Array<number>(16).fill(0x42));
+  for (const retained of [path, entry, id]) {
+    expect(retained.buffer).not.toBe(image.buffer);
+    expect(retained.buffer.byteLength).toBe(retained.byteLength);
+  }
+  image.fill(0);
+  expect([...entry]).toEqual([0x78]);
+  expect([...id]).toEqual(Array<number>(16).fill(0x42));
+});
+
 it("retains newline and misleading field names from binary segment, section and dylib strings", async () => {
   const name = Buffer.from("x\naddr 0x1");
   const dylib = Buffer.from("lib\nLoad command 2\ncmd LC_SEGMENT_64\0");
@@ -183,6 +226,29 @@ it("retains bounded linker options and dylinker strings with embedded framing", 
   await expect(
     readMachoCommandNames(read, image.length, 64, 3),
   ).rejects.toThrow("records exceed");
+});
+
+it("bounds aggregate linker option bytes across read windows", async () => {
+  const options = Buffer.from(`first\0${"x".repeat(4097)}\0`);
+  const size = (12 + options.length + 7) & ~7;
+  const image = Buffer.alloc(32 + size);
+  image.writeUInt32LE(0xfeedfacf, 0);
+  image.writeUInt32LE(0x0100000c, 4);
+  image.writeUInt32LE(1, 16);
+  image.writeUInt32LE(size, 20);
+  image.writeUInt32LE(0x2d, 32);
+  image.writeUInt32LE(size, 36);
+  image.writeUInt32LE(2, 40);
+  options.copy(image, 44);
+  const read = async (offset: number, length: number) =>
+    image.subarray(offset, offset + length);
+  const exact = await readMachoCommandNames(read, image.length, 4102, 3);
+  expect(
+    exact.commands[0]?.linkerOptions?.map((value) => value.byteLength),
+  ).toEqual([5, 4097]);
+  await expect(
+    readMachoCommandNames(read, image.length, 4101, 3),
+  ).rejects.toThrow("bytes exceed the retained output budget");
 });
 
 it("reads many small linker options with linear source traffic", async () => {

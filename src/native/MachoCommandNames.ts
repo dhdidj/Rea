@@ -288,7 +288,9 @@ export const readMachoCommandNames = async (
       throw new MachoCommandNamesLimitError(maximumStringBytes, "bytes");
     chargeProjection(bytes.byteLength, PROJECTED_STRING_EXPANSION);
     retainedStringBytes += bytes.byteLength;
-    return bytes;
+    // Range readers may return Buffer views into a much larger read window.
+    // Charge the retained length before allocating an independently owned copy.
+    return Uint8Array.from(bytes);
   };
   const commands: MachoCommandNames["commands"][number][] = [];
   while (cursor.nextOffset !== null) {
@@ -452,7 +454,7 @@ export const readMachoCommandNames = async (
           "Mach-O command string is unterminated",
         );
       }
-      commandString = retain(bytes.slice(0, end));
+      commandString = retain(bytes.subarray(0, end));
       commandStringOffset = offset;
       if (DYLIB_COMMANDS.has(frame.command)) {
         const fixed = await exact(at + 12, 12);
@@ -558,23 +560,35 @@ export const readMachoCommandNames = async (
       records += count;
       linkerOptions = [];
       let offset = 12;
-      let current: number[] = [];
+      let current = new Uint8Array(0);
+      let currentLength = 0;
       while (linkerOptions.length < count && offset < frame.size) {
         const length = Math.min(frame.size - offset, 4096);
         const bytes = await exact(at + offset, length);
         offset += length;
         for (const byte of bytes) {
           if (byte === 0) {
-            linkerOptions.push(retain(Uint8Array.from(current)));
-            current = [];
+            linkerOptions.push(retain(current.subarray(0, currentLength)));
+            current = new Uint8Array(0);
+            currentLength = 0;
             if (linkerOptions.length === count) break;
           } else {
-            if (current.length >= maximumStringBytes)
+            const remaining = maximumStringBytes - retainedStringBytes;
+            if (currentLength >= remaining)
               throw new MachoCommandNamesLimitError(
                 maximumStringBytes,
                 "bytes",
               );
-            current.push(byte);
+            if (currentLength === current.byteLength) {
+              const capacity = Math.min(
+                remaining,
+                Math.max(32, current.byteLength * 2),
+              );
+              const expanded = new Uint8Array(capacity);
+              expanded.set(current);
+              current = expanded;
+            }
+            current[currentLength++] = byte;
           }
         }
       }
@@ -607,7 +621,7 @@ export const readMachoCommandNames = async (
       const data = await exact(at + 8, 32);
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
       note = {
-        owner: retain(data.slice(0, 16)),
+        owner: retain(data.subarray(0, 16)),
         offset: view.getBigUint64(16, table.littleEndian),
         size: view.getBigUint64(24, table.littleEndian),
       };
@@ -636,7 +650,7 @@ export const readMachoCommandNames = async (
       fileset = {
         address: view.getBigUint64(0, table.littleEndian),
         fileOffset: view.getBigUint64(8, table.littleEndian),
-        entryId: retain(value.slice(0, end)),
+        entryId: retain(value.subarray(0, end)),
         reserved: view.getUint32(20, table.littleEndian),
       };
     }
@@ -644,7 +658,7 @@ export const readMachoCommandNames = async (
     if (frame.command === 0x1b) {
       if (frame.size < 24)
         throw new MachoBinaryFormatError("Mach-O UUID command is truncated");
-      uuid = (await exact(at + 8, 16)).slice();
+      uuid = Uint8Array.from(await exact(at + 8, 16));
     }
     let entrypoint: MachoCommandNames["commands"][number]["entrypoint"];
     if (frame.command === 0x80000028) {

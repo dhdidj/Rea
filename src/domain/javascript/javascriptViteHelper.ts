@@ -11,6 +11,7 @@ import {
   type JavaScriptSemanticAnalysisState,
 } from "./javascriptSemanticState.js";
 import { semanticArrayIndex } from "./javascriptSemanticPropertyPaths.js";
+import { semanticIdentifierRole } from "./javascriptSemanticProjection.js";
 import {
   childNodes,
   javaScriptAstChildKeys,
@@ -170,7 +171,26 @@ export function* tableMayAffectIndexesSteps(
         t.isIdentifier(node.callee, { name: "eval" })
       )
         return true;
-      if (t.isIdentifier(node)) {
+      if (
+        t.isIdentifier(node) &&
+        (node.name === "arguments" || node.name === indexes)
+      ) {
+        const parent = state.parentsByNode.get(node);
+        if (parent === undefined) return true;
+        const ancestors: t.Node[] = [parent];
+        for (
+          let ancestor = state.parentsByNode.get(parent);
+          ancestor !== undefined;
+          ancestor = state.parentsByNode.get(ancestor)
+        ) {
+          if (ancestors.length >= 1024) return true;
+          ancestors.push(ancestor);
+          if (ancestor === helper) break;
+        }
+        ancestors.reverse();
+        if (ancestors[0] !== helper) return true;
+        if (semanticIdentifierRole(node, parent, () => ancestors) === null)
+          continue;
         // In lowered non-strict functions arguments[0] aliases the parameter;
         // passing either value away also permits mutation before projection.
         if (node.name === "arguments") return true;

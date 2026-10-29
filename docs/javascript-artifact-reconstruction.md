@@ -364,13 +364,12 @@ Selected bounded text is then parsed as inert data to recover:
   relative to the calling module; string worker and service-worker paths use
   the document base URL or Node's working directory, which static analysis
   does not establish, so they keep their expression and stay unresolved);
-- Vite preload dependency tables (`__vite__mapDeps`): `./` entries resolve
-  relative to the importing chunk; base-relative entries such as
-  `assets/chunk.js` carry a `vite-output:` specifier and resolve under the one
-  ancestor directory of the importer that holds them, the build output
-  directory. A file found there but not analyzed, such as a stylesheet, stays
-  `unavailable` with its path. Selecting only the assets directory leaves them
-  `not-found`;
+- Vite dependency tables (`__vite__mapDeps`): selected literal entries retain
+  their original values as candidates. A matching local file may be reported as
+  a candidate path, but the table alone does not establish a load, runtime URL
+  base, or applicable import map. Candidate resolution stays unavailable and
+  graph coverage is partial; independently observed imports keep their own
+  resolution. Previously retained Evidence is not rewritten;
 - route, network endpoint, storage, and vendor-marker observations;
 - local source-map declarations and original
   source names and content digests;
@@ -392,7 +391,7 @@ candidates. A template recovered with a parser error and no cooked value stays
 dynamic; its raw spelling is not treated as a valid JavaScript string.
 
 Vite `__vite__mapDeps` dependency tables use decoded JavaScript string values,
-so an escaped path such as `caf\u00e9.js` resolves to `café.js`. array positions
+so an escaped path such as `caf\u00e9.js` is retained as `café.js`. array positions
 are preserved when entries are dynamic or missing; a spread of unknown length
 makes subsequent indexes unknown. calls use their own lexical helper binding,
 and unresolved dependencies retain the call expression and source evidence.

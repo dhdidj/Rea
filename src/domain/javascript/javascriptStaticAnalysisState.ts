@@ -129,13 +129,20 @@ export interface JavaScriptFindingContext {
 }
 
 /** Candidate import, require, worker, or service-worker reference. */
-export interface JavaScriptReferenceInput {
-  readonly operation?: JavaScriptStaticReference["operation"];
+export type JavaScriptReferenceInput = {
   readonly node: t.Node;
-  readonly kind: JavaScriptStaticReference["kind"];
   readonly specifier: string | undefined;
   readonly resolutionBasePath?: string;
-}
+} & (
+  | { readonly kind: "vite-table-candidate"; readonly operation: "candidate" }
+  | {
+      readonly kind: Exclude<
+        JavaScriptStaticReference["kind"],
+        "vite-table-candidate"
+      >;
+      readonly operation?: "load" | "resolve";
+    }
+);
 
 /** Candidate route or network endpoint literal. */
 export interface JavaScriptEndpointInput {

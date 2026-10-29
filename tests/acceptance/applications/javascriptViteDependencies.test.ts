@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { expect } from "vitest";
 
 import { parseEvidence } from "../../../src/domain/evidence.js";
+import type { JavaScriptApplicationGraph } from "../../../src/domain/javascript/javascriptApplicationGraph.js";
 import { javascriptApplicationAnalysisResultSchema } from "../../../src/domain/javascript/javascriptApplicationAnalysis.js";
 import { connectLocalToolsMcp } from "../../fixtures/localToolsMcp.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
@@ -2839,12 +2840,149 @@ const batches = Array.from(
   (_, index) => allScenarios.slice(index * 16, (index + 1) * 16),
 );
 
+const assertScenarioGraph = (
+  graph: JavaScriptApplicationGraph,
+  scenario: ViteScenario,
+  source: string,
+): void => {
+  const callRanges = expectedCallRanges(scenario);
+  const unknownRanges = expectedUnknownCallRanges(scenario, callRanges);
+  const knownRanges = callRanges.filter(
+    (_, index) => !scenario.unknownCallOccurrences?.includes(index),
+  );
+  const directImports = graph.edges.filter(
+    ({ relation, properties, evidence }) =>
+      relation === "imports" &&
+      properties.kind === "dynamic-import" &&
+      evidence.location.available &&
+      evidence.location.value.kind === "source-range" &&
+      evidence.location.value.source === scenario.file,
+  );
+  const candidates = graph.nodes
+    .filter(({ kind }) => kind === "unknown")
+    .flatMap(({ observations }) => observations)
+    .filter(
+      ({ properties, evidence }) =>
+        properties.vite_table_candidate === true &&
+        evidence.location.available &&
+        evidence.location.value.kind === "source-range" &&
+        evidence.location.value.source === scenario.file,
+    );
+  // A selected table value is only a candidate. Imported edges here must
+  // come from actual import syntax, not from the table call itself.
+  for (const edge of directImports) {
+    const location = edge.evidence.location;
+    if (location.available && location.value.kind === "source-range") {
+      const { line, column } = location.value.start;
+      const sourceLine = scenario.source.split("\n")[line - 1] ?? "";
+      expect
+        .soft(sourceLine.slice(column), scenario.file)
+        .toMatch(/^import\s*\(/u);
+    }
+  }
+  const imports = [...directImports, ...candidates];
+  expect
+    .soft(imports, scenario.file)
+    .toHaveLength(scenario.resolved.length + unknownRanges.length);
+  if (callRanges.length > 1)
+    expect
+      .soft(
+        imports
+          .flatMap(({ evidence }) => {
+            const location = evidence.location;
+            return location.available && location.value.kind === "source-range"
+              ? [
+                  JSON.stringify({
+                    start: location.value.start,
+                    end: location.value.end,
+                  }),
+                ]
+              : [];
+          })
+          .sort(),
+        scenario.file,
+      )
+      .toEqual(callRanges.map((range) => JSON.stringify(range)).sort());
+  expect
+    .soft(
+      imports
+        .flatMap(({ properties }) => {
+          const path =
+            properties.vite_table_candidate === true
+              ? properties.candidate_path
+              : properties.resolved_path;
+          return typeof path === "string" ? [path] : [];
+        })
+        .sort(),
+      scenario.file,
+    )
+    .toEqual([...scenario.resolved].sort());
+  expect
+    .soft(
+      imports.some(({ properties }) => properties.specifier === null),
+      scenario.file,
+    )
+    .toBe(scenario.unknown);
+  for (const edge of imports) {
+    const resolved =
+      edge.properties.vite_table_candidate === true
+        ? edge.properties.candidate_path
+        : edge.properties.resolved_path;
+    if (typeof resolved === "string") {
+      expect.soft(edge.properties, scenario.file).toMatchObject({
+        specifier: "./" + resolved,
+      });
+      if (edge.properties.vite_table_candidate === true)
+        expect
+          .soft(edge.properties.resolution_status, scenario.file)
+          .toBe("unavailable");
+      else
+        expect.soft(edge.properties, scenario.file).toMatchObject({
+          resolved_path: resolved,
+          resolution_status: "resolved",
+        });
+    } else {
+      expectUnknownImportExpression(scenario, edge.properties);
+      expect.soft(edge.evidence.coverage.status, scenario.file).toBe("partial");
+      const location = edge.evidence.location;
+      if (location.available && location.value.kind === "source-range")
+        expect.soft(unknownRanges, scenario.file).toContainEqual({
+          start: location.value.start,
+          end: location.value.end,
+        });
+    }
+    const location = edge.evidence.location;
+    expect.soft(edge.evidence.artifact, scenario.file).toMatchObject({
+      available: true,
+      sha256: createHash("sha256").update(source).digest("hex"),
+    });
+    if (location.available && location.value.kind === "source-range") {
+      expect.soft(callRanges, scenario.file).toContainEqual({
+        start: location.value.start,
+        end: location.value.end,
+      });
+      if (
+        scenario.unknownCallOccurrences !== undefined &&
+        edge.properties.specifier !== null
+      )
+        expect.soft(knownRanges, scenario.file).toContainEqual({
+          start: location.value.start,
+          end: location.value.end,
+        });
+      if (edge.properties.vite_table_candidate === true)
+        expect
+          .soft(edge.evidence.coverage.status, scenario.file)
+          .toBe("partial");
+    }
+  }
+};
+
 cliTest.for(
   (["CLI", "stdio MCP"] as const).flatMap((surface) =>
     batches.map((scenarios, batch) => [surface, batch + 1, scenarios] as const),
   ),
 )(
-  "resolves Vite dependency values without inventing paths through %s (batch %i)",
+  "retains Vite dependency values without inventing paths through %s (batch %i)",
   { timeout: 120_000 },
   async ([surface, , scenarios], { cli }) => {
     const root = await createTestTempDirectory("rea-vite-dependencies-");
@@ -2888,106 +3026,7 @@ cliTest.for(
     const { graph } = javascriptApplicationAnalysisResultSchema.parse(
       parseEvidence(document).normalized_result,
     );
-    for (const scenario of scenarios) {
-      const callRanges = expectedCallRanges(scenario);
-      const unknownRanges = expectedUnknownCallRanges(scenario, callRanges);
-      const knownRanges = callRanges.filter(
-        (_, index) => !scenario.unknownCallOccurrences?.includes(index),
-      );
-      const imports = graph.edges.filter(
-        ({ relation, properties, evidence }) =>
-          relation === "imports" &&
-          properties.kind === "dynamic-import" &&
-          evidence.location.available &&
-          evidence.location.value.kind === "source-range" &&
-          evidence.location.value.source === scenario.file,
-      );
-      expect
-        .soft(imports, scenario.file)
-        .toHaveLength(scenario.resolved.length + unknownRanges.length);
-      if (callRanges.length > 1)
-        expect
-          .soft(
-            imports
-              .flatMap(({ evidence }) => {
-                const location = evidence.location;
-                return location.available &&
-                  location.value.kind === "source-range"
-                  ? [
-                      JSON.stringify({
-                        start: location.value.start,
-                        end: location.value.end,
-                      }),
-                    ]
-                  : [];
-              })
-              .sort(),
-            scenario.file,
-          )
-          .toEqual(callRanges.map((range) => JSON.stringify(range)).sort());
-      expect
-        .soft(
-          imports
-            .flatMap(({ properties }) =>
-              properties.resolved_path === null
-                ? []
-                : [properties.resolved_path],
-            )
-            .sort(),
-          scenario.file,
-        )
-        .toEqual([...scenario.resolved].sort());
-      expect
-        .soft(
-          imports.some(({ properties }) => properties.specifier === null),
-          scenario.file,
-        )
-        .toBe(scenario.unknown);
-      for (const edge of imports) {
-        const resolved = edge.properties.resolved_path;
-        if (typeof resolved === "string")
-          expect.soft(edge.properties, scenario.file).toMatchObject({
-            specifier: "./" + resolved,
-            resolved_path: resolved,
-          });
-        else {
-          expectUnknownImportExpression(scenario, edge.properties);
-          expect
-            .soft(edge.evidence.coverage.status, scenario.file)
-            .toBe("partial");
-          const location = edge.evidence.location;
-          if (location.available && location.value.kind === "source-range")
-            expect.soft(unknownRanges, scenario.file).toContainEqual({
-              start: location.value.start,
-              end: location.value.end,
-            });
-        }
-        const location = edge.evidence.location;
-        expect.soft(edge.evidence.artifact, scenario.file).toMatchObject({
-          available: true,
-          sha256: createHash("sha256")
-            .update(sources[scenario.file] ?? "")
-            .digest("hex"),
-        });
-        if (location.available && location.value.kind === "source-range") {
-          expect.soft(callRanges, scenario.file).toContainEqual({
-            start: location.value.start,
-            end: location.value.end,
-          });
-          if (
-            scenario.unknownCallOccurrences !== undefined &&
-            resolved !== null
-          )
-            expect.soft(knownRanges, scenario.file).toContainEqual({
-              start: location.value.start,
-              end: location.value.end,
-            });
-          if (!scenario.unknown)
-            expect
-              .soft(edge.evidence.coverage.status, scenario.file)
-              .toBe("complete");
-        }
-      }
-    }
+    for (const scenario of scenarios)
+      assertScenarioGraph(graph, scenario, sources[scenario.file] ?? "");
   },
 );

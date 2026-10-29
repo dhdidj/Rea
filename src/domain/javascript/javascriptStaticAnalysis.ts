@@ -1,5 +1,3 @@
-import { hasScheme } from "../artifactPathSyntax.js";
-import { VITE_OUTPUT_DEPENDENCY_PREFIX } from "./javascriptStaticAnalysisTypes.js";
 import { createXhrOpenRequestQuery } from "./javascriptNetworkRequests.js";
 import { uniqueSortedBy } from "../canonicalOrdering.js";
 import * as t from "@babel/types";
@@ -267,19 +265,13 @@ function* retainViteReferencesSteps(
     for (const specifier of specifiers) {
       if (examined++ % 1024 === 0) yield;
       const before = accumulator.references.length;
-      if (specifier === undefined) accumulator.unknownFindings += 1;
-      const retainedSpecifier =
-        specifier === undefined ||
-        specifier === "" ||
-        specifier.startsWith(".") ||
-        specifier.startsWith("/") ||
-        hasScheme(specifier)
-          ? specifier
-          : `${VITE_OUTPUT_DEPENDENCY_PREFIX}${specifier}`;
+      // A table value is an observed candidate, not proof of a runtime load.
+      accumulator.unknownFindings += 1;
       addReference(findings, {
         node,
-        kind: "dynamic-import",
-        specifier: retainedSpecifier,
+        kind: "vite-table-candidate",
+        operation: "candidate",
+        specifier,
       });
       const reference = accumulator.references[before];
       if (reference !== undefined) ordered.push(reference);

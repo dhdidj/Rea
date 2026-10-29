@@ -5,10 +5,7 @@ import {
 import * as t from "@babel/types";
 import { isIntrinsicMapLookup } from "./javascriptSemanticMapOperations.js";
 
-import {
-  htmlUrlText,
-  stripQueryAndFragment,
-} from "../artifactPathSyntax.js";
+import { htmlUrlText, stripQueryAndFragment } from "../artifactPathSyntax.js";
 import { sanitizeEndpointCandidate } from "../browserObservation.js";
 import {
   addFindingOnce,
@@ -360,7 +357,6 @@ const chunkLoadSpecifier = (
   if (loader === "unknown") return { specifier: undefined };
   return { specifier: prefixedArgument("chunk:", node.arguments[0]) };
 };
-
 
 const requestConstructorUrl = (
   node: t.Node,
@@ -816,13 +812,16 @@ export const addReference = (
           expression: sourceSlice(context.source, input.node),
         }
       : { specifier, expression: null };
+  const identity =
+    input.kind === "vite-table-candidate"
+      ? { kind: input.kind, operation: input.operation }
+      : { kind: input.kind, operation: input.operation ?? "load" };
   addLocatedFinding(context, {
     collection: context.accumulator.references,
     key: `reference\0${input.kind}\0${input.operation ?? "load"}\0${reference.specifier ?? reference.expression}\0${input.resolutionBasePath ?? ""}`,
     node: input.node,
     value: {
-      kind: input.kind,
-      operation: input.operation ?? "load",
+      ...identity,
       ...reference,
       ...(input.resolutionBasePath === undefined
         ? {}

@@ -129,11 +129,7 @@ type AvailabilityContext = {
   readonly targetOpen: boolean;
   readonly requiresActiveTarget: boolean;
   readonly targetKind:
-    | "executable"
-    | "database"
-    | "archive"
-    | "artifact"
-    | undefined;
+    "executable" | "database" | "archive" | "artifact" | undefined;
   readonly targetFormat: string | undefined;
   readonly descriptors: ReadonlyMap<string, ProviderDescriptor>;
   readonly policy: AvailabilityPolicy;
@@ -144,8 +140,7 @@ type EnhancedContractName = Extract<
   { readonly kind: "enhanced" }
 >["name"];
 type CompositionRequirements = readonly (
-  | AnalysisOperation
-  | readonly AnalysisOperation[]
+  AnalysisOperation | readonly AnalysisOperation[]
 )[];
 type AvailabilityMode = {
   readonly name: string;
@@ -387,12 +382,25 @@ const availabilityFor = (context: AvailabilityContext): Availability => {
   )
     return { reason: "available", remediation: null };
   if (context.name === "get_navigation_context") {
+    const target = targetAvailability(context);
+    if (target !== null) {
+      return {
+        ...target,
+        defaultModeAvailable: false,
+        modes: NAVIGATION_CONTEXT_MODES.map((mode) => ({
+          name: mode.name,
+          available: false,
+          missing_operations: [...mode.requirements],
+          remediation: target.remediation,
+        })),
+      };
+    }
     const modes = availabilityForModes(
       NAVIGATION_CONTEXT_MODES,
       "current_selection",
       context.descriptors,
     );
-    return { ...modes, ...targetAvailability(context) };
+    return modes;
   }
   const javascriptApplication = javascriptApplicationAvailability(context);
   if (javascriptApplication !== null) return javascriptApplication;
@@ -439,11 +447,10 @@ const javascriptApplicationAvailability = ({
     : null;
 };
 
-const workflowAvailabilityFor = ({
-  name,
-  kind,
-  policy,
-}: AvailabilityContext): Availability | null => {
+const workflowAvailabilityFor = (
+  context: AvailabilityContext,
+): Availability | null => {
+  const { name, kind, policy } = context;
   if (
     name === "inspect_desktop_application" ||
     name === "inspect_go_binary" ||
@@ -641,7 +648,10 @@ const workflowAvailabilityFor = ({
           remediation:
             "Start REA with its JavaScript runtime provider available.",
         };
-  if (kind === "session") return { reason: "available", remediation: null };
+  if (kind === "session")
+    return (
+      targetAvailability(context) ?? { reason: "available", remediation: null }
+    );
   return null;
 };
 
@@ -771,12 +781,17 @@ const targetAvailability = ({
     targetKind !== undefined &&
     targetKind !== "executable" &&
     targetKind !== "database" &&
-    (kind === "official-proxy" || kind === "enhanced")
+    (kind === "official-proxy" ||
+      kind === "enhanced" ||
+      name === "get_navigation_context" ||
+      name === "inspect_address_context")
   )
     return {
       reason: "target_unsupported",
       remediation:
-        "Inventory or extract a native executable, then call open_binary on that executable.",
+        name === "inspect_address_context"
+          ? "Inventory or extract a native executable, then call open_binary on that executable. An explicit document can still be queried, but its facets may be unavailable."
+          : "Inventory or extract a native executable, then call open_binary on that executable.",
     };
   if (
     targetOpen &&

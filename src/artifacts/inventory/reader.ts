@@ -17,6 +17,7 @@ import {
 } from "../../domain/zipPackageFormat.js";
 import type { StableRegularFileDescriptor } from "../../filesystem/RegularFile.js";
 import { ESP_IMAGE_LIMITATIONS } from "../../domain/firmware/espImageFacts.js";
+import { INES_LIMITATION } from "../InesArtifactReader.js";
 
 export const createReader = (
   path: string,
@@ -57,6 +58,7 @@ export const inventoryCoverage = (
     return {
       coverage: { scope: "container-entries", status: traversal.status },
       limitations: [
+        ...(reader.format === "ines" ? [INES_LIMITATION] : []),
         ...(isZipPackageFormat(reader.format)
           ? [ZIP_NON_ENTRY_LIMITATION]
           : []),
@@ -110,6 +112,7 @@ export const inventoryCoverage = (
     isZipPackageFormat(format) ||
     format === "directory" ||
     format === "asar" ||
+    format === "ines" ||
     format === "godot-pck" ||
     format === "unityfs" ||
     format === "uimage" ||

@@ -1,3 +1,7 @@
+import {
+  nesContainerFormat,
+  parseInesLayout,
+} from "../../domain/inesContainer.js";
 import type { GodotPckAdmission } from "../GodotPckLocation.js";
 import type { PyInstallerAdmission } from "../pyinstaller/PyInstallerAdmission.js";
 import { assertArtifactSelectedSource } from "../ArtifactSelectedSource.js";
@@ -8,7 +12,11 @@ import {
   ArtifactEmbeddedFormatProbes,
   type ArtifactEmbeddedFormatProbeFacts,
 } from "../ArtifactEmbeddedFormatProbes.js";
-import { sameRegularFileState } from "../../filesystem/RegularFile.js";
+import {
+  assertStableRegularFileIdentity,
+  RegularFileChangedError,
+  sameRegularFileState,
+} from "../../filesystem/RegularFile.js";
 import type { FileHandle } from "node:fs/promises";
 import type { Stats } from "node:fs";
 import type { StableRegularFileDescriptor } from "../../filesystem/RegularFile.js";
@@ -164,6 +172,7 @@ export const classifyAndHashRootForInventory = async (
     const retainSource =
       isZipPackageFormat(format) ||
       format === "mach-o-universal" ||
+      format === "ines" ||
       format === "godot-pck" ||
       format === "unityfs" ||
       format === "uimage" ||
@@ -235,6 +244,26 @@ const classifyRootFormat = async (
   const archiveBytes = (await handle.stat()).size;
   const evidence = probe.finish(archiveBytes);
   abortIfNeeded(signal);
+  try {
+    await assertStableRegularFileIdentity(handle, path, source.initial, {
+      symlinks: "reject",
+      ...(signal === undefined ? {} : { signal }),
+    });
+  } catch (cause: unknown) {
+    abortIfNeeded(signal);
+    if (cause instanceof RegularFileChangedError)
+      throw new ArtifactReaderFailure(
+        "integrity",
+        `Root artifact changed during classification: ${path}`,
+        { cause: cause.cause ?? cause },
+      );
+    throw cause;
+  }
+  if (nesContainerFormat(evidence.prefix) !== undefined) {
+    const parsed = parseInesLayout(evidence.prefix, archiveBytes);
+    if (!parsed.ok) throw new ArtifactReaderFailure("format", parsed.error);
+    return "ines";
+  }
   const classificationPath = artifactNameForClassification(
     selectedPath ?? path,
     path,

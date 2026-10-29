@@ -7,6 +7,8 @@ import type { ArtifactReader } from "./ArtifactReader.js";
 import { HexRecordArtifactReader } from "./HexRecordArtifactReader.js";
 import { DirectoryArtifactReader } from "./DirectoryArtifactReader.js";
 import { EspImageArtifactReader } from "./EspImageArtifactReader.js";
+import { InesArtifactReader } from "./InesArtifactReader.js";
+import { ArtifactReaderFailure } from "./ArtifactReader.js";
 import { GodotPckArtifactReader } from "./GodotPckArtifactReader.js";
 import { MachOSliceArtifactReader } from "./MachOSliceArtifactReader.js";
 import { NativeDmgArtifactReader } from "./NativeDmgArtifactReader.js";
@@ -26,6 +28,7 @@ import type { StableRegularFileDescriptor } from "../filesystem/RegularFile.js";
 export type ArtifactReaderFormat =
   | "directory"
   | "asar"
+  | "ines"
   | "pyinstaller"
   | "node-sea"
   | "godot-pck"
@@ -76,6 +79,13 @@ export function createArtifactReader(
   if (isZipPackageFormat(format))
     return new ZipArtifactReader(path, format, undefined, rootSource);
   switch (format) {
+    case "ines":
+      if (rootSource === undefined)
+        throw new ArtifactReaderFailure(
+          "integrity",
+          "iNES inventory requires its admitted source descriptor",
+        );
+      return new InesArtifactReader(path, rootSource);
     case "directory":
       return new DirectoryArtifactReader(path, options.unreadableDirectories);
     case "asar":

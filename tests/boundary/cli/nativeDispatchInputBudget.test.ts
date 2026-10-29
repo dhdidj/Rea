@@ -8,10 +8,50 @@ import { nativeDispatchMetadataResultSchema } from "../../../src/domain/native/o
 import { objcRecordBudgetMacho } from "../../fixtures/objcRecordBudgetMacho.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 import { cliTest } from "../../support/cli/cliFixture.js";
+import { machoImage } from "../../../src/artifacts/apple/MachoImage.fixture.js";
 
 describe.skipIf(process.platform !== "darwin")(
   "native dispatch input budget through the public CLI",
   () => {
+    cliTest(
+      "accepts a walkable command table beyond 4096 commands within the input budget",
+      async ({ cli }) => {
+        const directory = await createTestTempDirectory("rea-many-commands-");
+        const path = join(directory, "fixture.macho");
+        const command = Buffer.alloc(16);
+        command.writeUInt32LE(0x2a); // LC_SOURCE_VERSION
+        command.writeUInt32LE(16, 4);
+        const bytes = machoImage({
+          commands: Array.from({ length: 4097 }, () => command),
+        });
+        await writeFile(path, bytes);
+        const output = await cli.run({
+          arguments: [
+            "inspect-native-dispatch-metadata",
+            path,
+            "--max-input-bytes",
+            String(bytes.byteLength),
+            "--json",
+          ],
+          environment: { REA_LOG_LEVEL: "silent" },
+        });
+        expect(output.exitCode, `${output.stdout}\n${output.stderr}`).toBe(0);
+        const result = nativeDispatchMetadataResultSchema.parse(
+          parseEvidence(output.json).normalized_result,
+        );
+        expect(result.input_admission).toEqual({
+          maximum_bytes: bytes.byteLength,
+          source: "caller",
+          retained_bytes: bytes.byteLength,
+        });
+        expect(result.result.objc_classes).toEqual([]);
+        expect(result.result.target_selection).toMatchObject({
+          container: "thin",
+          byte_length: bytes.byteLength,
+        });
+      },
+    );
+
     cliTest(
       "forwards --max-input-bytes to the byte reader and records its admission",
       async ({ cli }) => {

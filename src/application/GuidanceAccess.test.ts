@@ -285,7 +285,8 @@ it("returns cleanup failures separately and retains their owner until retry succ
   expect(result.error.cleanupIncomplete).toBe(false);
   expect(result.error.cleanupResources).toEqual([]);
 
-  resources.retain({
+  const freshResources = new ArtifactResourceScope();
+  freshResources.retain({
     kind: "lease",
     resource: "unrelated pending resource",
     lease: { release: async () => undefined },
@@ -296,13 +297,13 @@ it("returns cleanup failures separately and retains their owner until retry succ
       async () => {
         throw new Error("guide is unreadable");
       },
-      resources,
+      freshResources,
     ),
   ).toMatchObject({
     ok: true,
     value: { status: "bundle_unavailable" },
   });
-  await resources.close();
+  await freshResources.close();
 });
 
 it("uses only the fixed managed guide inventory for injected reads", async () => {

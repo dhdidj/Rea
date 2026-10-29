@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { z } from "zod";
-import type { ArtifactResourceScope } from "../artifacts/ArtifactResourceScope.js";
+import { ArtifactResourceScope } from "../artifacts/ArtifactResourceScope.js";
+import { AnalysisCleanupLease } from "../artifacts/AnalysisCleanupLease.js";
 import { MANAGED_SKILL_FILES, readSkillFile } from "./SetupSkill.js";
 import { PRODUCT_IDENTITY } from "../identity.js";
 import {
@@ -195,6 +196,66 @@ const sectionLocator = (
   return `rea-guide-v1.${Buffer.from(identity).toString("base64url")}`;
 };
 
+type GuidanceReader = (
+  relativePath: string,
+  resources: ArtifactResourceScope,
+) => Promise<string>;
+type GuidanceResult<Value> = Result<
+  Value,
+  AnalysisInputError | ProviderCleanupError
+>;
+
+/** Admit the complete request once; file reads belong to its independent child. */
+const runGuidanceOperation = async <Value>(
+  resources: ArtifactResourceScope,
+  operationName: string,
+  operation: (child: ArtifactResourceScope) => Promise<GuidanceResult<Value>>,
+): Promise<GuidanceResult<Value>> => {
+  try {
+    return await resources.run(async () => {
+      const child = new ArtifactResourceScope();
+      try {
+        return await operation(child);
+      } finally {
+        if (child.hasPending)
+          resources.retain({
+            kind: "lease",
+            resource: "managed guidance operation",
+            lease: new AnalysisCleanupLease(() => child.close(), {
+              get cleanupResources() {
+                return child.cleanupResources;
+              },
+            }),
+          });
+        else await child.close();
+      }
+    });
+  } catch (cause: unknown) {
+    if (cause instanceof ArtifactReaderFailure && cause.cleanup !== undefined)
+      return err(guidanceCleanupFailure(cause, resources, operationName));
+    throw cause;
+  }
+};
+
+/** Reader seams receive the operation child rather than re-entering the root. */
+export const searchGuidanceWithReader = (
+  input: unknown,
+  readGuide: GuidanceReader,
+  resources: ArtifactResourceScope,
+): Promise<GuidanceResult<SearchGuidanceOutput>> =>
+  runGuidanceOperation(resources, "search_guidance", (child) =>
+    searchGuidanceInScope(input, (path) => readGuide(path, child), child),
+  );
+
+export const readGuidanceSectionWithReader = (
+  input: unknown,
+  readGuide: GuidanceReader,
+  resources: ArtifactResourceScope,
+): Promise<GuidanceResult<ReadGuidanceSectionOutput>> =>
+  runGuidanceOperation(resources, "read_guidance_section", (child) =>
+    readGuidanceSectionInScope(input, (path) => readGuide(path, child), child),
+  );
+
 const invalidInput = (
   operation: string,
   input: unknown,
@@ -207,15 +268,10 @@ export const searchGuidance = async (
   resources: ArtifactResourceScope,
 ): Promise<
   Result<SearchGuidanceOutput, AnalysisInputError | ProviderCleanupError>
-> =>
-  searchGuidanceWithReader(
-    input,
-    (path) => readPackagedGuide(path, resources),
-    resources,
-  );
+> => searchGuidanceWithReader(input, readPackagedGuide, resources);
 
 /** Reader seam keeps packaged-guide drift and missing-file behavior testable. */
-export const searchGuidanceWithReader = async (
+const searchGuidanceInScope = async (
   input: unknown,
   readGuide: (relativePath: string) => Promise<string>,
   resources: ArtifactResourceScope,
@@ -371,15 +427,10 @@ export const readGuidanceSection = async (
   resources: ArtifactResourceScope,
 ): Promise<
   Result<ReadGuidanceSectionOutput, AnalysisInputError | ProviderCleanupError>
-> =>
-  readGuidanceSectionWithReader(
-    input,
-    (path) => readPackagedGuide(path, resources),
-    resources,
-  );
+> => readGuidanceSectionWithReader(input, readPackagedGuide, resources);
 
 /** Reader seam keeps packaged-guide drift and missing-file behavior testable. */
-export const readGuidanceSectionWithReader = async (
+const readGuidanceSectionInScope = async (
   input: unknown,
   readGuide: (relativePath: string) => Promise<string>,
   resources: ArtifactResourceScope,

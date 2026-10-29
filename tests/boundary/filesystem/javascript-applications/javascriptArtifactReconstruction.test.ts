@@ -26,6 +26,7 @@ import type { JavaScriptModuleSemanticIr } from "../../../../src/domain/javascri
 import type { JavaScriptStaticAnalysis } from "../../../../src/domain/javascript/javascriptStaticAnalysisTypes.js";
 import type { JavaScriptArtifactFile } from "../../../../src/domain/javascript/javascriptArtifactFiles.js";
 import { completeJavaScriptAnalysisSteps } from "../../../../src/application/javascript/JavaScriptAnalysisControl.js";
+import { buildImmutableJavaScriptArtifactGraphSteps } from "../../../../src/application/javascript/JavaScriptArtifactGraphBuilder.js";
 import {
   writeJavaScriptAnalysisTransfer,
   readJavaScriptAnalysisTransfer,
@@ -378,6 +379,62 @@ it("keeps imported loadFile ownership unknown across an application projection o
           source_node_id === role.node_id && relation === "maps_to",
       ),
     ).toEqual([]);
+  } finally {
+    await reader.close();
+  }
+});
+
+it("does not expand or pair IPC from a revoked application projection", async () => {
+  const root = await createTestTempDirectory("rea-revoked-ipc-");
+  await writeFixtureFiles(root, {
+    "package.json": JSON.stringify({ main: "main.cjs" }),
+    "main.cjs":
+      'const { ipcMain } = require("electron"); ipcMain.handle("ping", () => 1);',
+    "preload.cjs":
+      'const { ipcRenderer } = require("electron"); ipcRenderer.invoke("ping");',
+  });
+  const snapshot = await scanCanonicalArtifactInventory(root, {});
+  const reader = createJavaScriptArtifactReader(root, "directory");
+  try {
+    const files = await readJavaScriptArtifactFiles(reader, snapshot);
+    const { analysis } = await analyzeArtifactFiles(files);
+    const handler = analysis.files.find(({ file }) => file.path === "main.cjs");
+    expect(handler?.javascript?.electron.ipc).toHaveLength(1);
+    const omitted = {
+      ...analysis,
+      files: analysis.files.map((file) =>
+        file.file.path === "main.cjs"
+          ? {
+              ...file,
+              application_projection_failure: {
+                reason: "fixture projection revoked",
+                error: null,
+                limits: null,
+              },
+            }
+          : file,
+      ),
+    };
+    const { graph, electronSummary } = await completeJavaScriptAnalysisSteps(
+      buildImmutableJavaScriptArtifactGraphSteps(snapshot, files, omitted),
+    );
+    expect(graph.coverage.status).toBe("partial");
+    expect(electronSummary.ipc).toMatchObject({
+      operations: 1,
+      main_handlers: 0,
+      paired_renderer_transmissions: 0,
+      ambiguous_renderer_transmissions: 1,
+      unpaired_literal_renderer_transmissions: 0,
+    });
+    expect(
+      graph.nodes.some(({ observations }) =>
+        observations.some(
+          ({ properties }) =>
+            properties.application_projection_failure !== undefined &&
+            properties.static_analysis !== undefined,
+        ),
+      ),
+    ).toBe(true);
   } finally {
     await reader.close();
   }

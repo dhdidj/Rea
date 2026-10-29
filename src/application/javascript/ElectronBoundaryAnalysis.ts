@@ -55,6 +55,7 @@ export interface ElectronIpcContext {
 export const createElectronIpcContext = (
   analysis: JavaScriptArtifactAnalysis,
   applicationOwner: (file: JavaScriptArtifactFile) => string | null,
+  coverageComplete = true,
 ): ElectronIpcContext => {
   const records = collectElectronIpcRecords(analysis);
   const owners = new Map(
@@ -81,6 +82,7 @@ export const createElectronIpcContext = (
       // Unknown ownership can conceal competing dispatch contexts. Different owners
       // do not prove runtime isolation, so retain ambiguity rather than absence.
       const uncertain =
+        !coverageComplete ||
         owner == null ||
         matching.some((handler) => owners.get(handler.key) == null);
       return {

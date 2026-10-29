@@ -198,8 +198,11 @@ function* buildJavaScriptArtifactGraphInputSteps(
     yield* addJavaScriptModuleRelationshipsSteps(projectionContext);
   const findingLimitations =
     yield* addJavaScriptStaticFindingsSteps(projectionContext);
-  const ipc = createElectronIpcContext(analysis, (file) =>
-    applicationRootPath(projectionContext, file),
+  const coverage = graphCoverage(context);
+  const ipc = createElectronIpcContext(
+    projectionContext.analysis,
+    (file) => applicationRootPath(projectionContext, file),
+    coverage.status === "complete",
   );
   addElectronBoundaries(projectionContext, ipc);
   yield;
@@ -207,10 +210,9 @@ function* buildJavaScriptArtifactGraphInputSteps(
   yield;
   addJavaScriptSourceMapOriginals(projectionContext);
   yield;
-  const coverage = graphCoverage(context);
   return {
     electronSummary: summarizeElectronBoundaries(
-      analysis,
+      projectionContext.analysis,
       ipc,
       context.directoryPaths,
     ),

@@ -158,6 +158,14 @@ const initializeCache = "const initialize = __vite__mapDeps; initialize([]); ";
 
 const allScenarios: readonly ViteScenario[] = [
   {
+    file: "intrinsic-prototype-escapes.js",
+    source: mapDependenciesWithEffects(
+      "const box = {value: Array.prototype}; opaque(box); __vite__mapDeps([0]);",
+    ),
+    resolved: [],
+    unknown: true,
+  },
+  {
     file: "owned-independent-constructor.js",
     source: mapDependenciesWithEffects(
       'const values = __vite__mapDeps(["constructor"], void 0, {constructor: {}}); opaque(values); __vite__mapDeps([0]);',

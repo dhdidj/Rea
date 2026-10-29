@@ -12,6 +12,7 @@ import {
   applicationContainerIdentity,
   addApplicationRootCandidate,
   artifactLocalIdentity,
+  artifactOccurrenceKey,
   chunkLookupKey,
   createElectronRoleNode,
   javascriptAnalysisCoverage,
@@ -236,7 +237,10 @@ const addReference = (
       identity: artifactLocalIdentity(
         input.file.sha256,
         "vite-table-candidate",
-        `${input.value.specifier ?? input.value.expression}:${JSON.stringify(input.value.location)}`,
+        artifactOccurrenceKey(input.file, [
+          input.value.specifier ?? input.value.expression,
+          input.value.location,
+        ]),
       ),
       observations: [
         {
@@ -290,7 +294,10 @@ const addReference = (
       identity: artifactLocalIdentity(
         input.file.sha256,
         input.value.kind,
-        input.value.specifier ?? input.value.expression,
+        artifactOccurrenceKey(
+          input.file,
+          input.value.specifier ?? input.value.expression,
+        ),
       ),
       observations: [
         {
@@ -410,7 +417,7 @@ const addEndpoint = (
     identity: artifactLocalIdentity(
       input.file.sha256,
       input.value.kind,
-      JSON.stringify([
+      artifactOccurrenceKey(input.file, [
         input.value.interpretation ?? "literal",
         ...(partial ? ["partial", input.value.location] : []),
         key,
@@ -490,7 +497,10 @@ const addStorage = (
     identity: artifactLocalIdentity(
       input.file.sha256,
       candidate ? `${input.value.kind}:candidate` : input.value.kind,
-      input.value.name ?? input.value.mechanism,
+      artifactOccurrenceKey(
+        input.file,
+        input.value.name ?? input.value.mechanism,
+      ),
     ),
     observations: [
       {
@@ -659,7 +669,7 @@ const addSourceMapEdge = (
         : artifactLocalIdentity(
             input.file.sha256,
             "unresolved-source-map",
-            declaredUrlSha256,
+            artifactOccurrenceKey(input.file, declaredUrlSha256),
           ),
     observations: [
       {
@@ -982,7 +992,10 @@ const unresolvedReferenceNode = (
     identity: artifactLocalIdentity(
       file.sha256,
       "unresolved-reference",
-      `${reference.kind}:${reference.specifier ?? reference.expression}`,
+      artifactOccurrenceKey(file, [
+        reference.kind,
+        reference.specifier ?? reference.expression,
+      ]),
     ),
     observations: [
       {

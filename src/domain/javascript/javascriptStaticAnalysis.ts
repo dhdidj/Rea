@@ -187,9 +187,15 @@ export function* analyzeParsedJavaScriptStaticSourceSteps(
     accumulator.moduleRangeIndex,
   );
   let hasElectronReference = false;
-  for (const [index, { specifier }] of references.entries()) {
+  for (const [index, { kind, specifier }] of references.entries()) {
     if (index > 0 && index % 1024 === 0) yield;
-    if (specifier !== null && ELECTRON_MODULE.test(specifier)) {
+    if (
+      (kind === "static-import" ||
+        kind === "dynamic-import" ||
+        kind === "require") &&
+      specifier !== null &&
+      ELECTRON_MODULE.test(specifier)
+    ) {
       hasElectronReference = true;
       break;
     }

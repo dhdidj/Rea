@@ -1,4 +1,5 @@
 import { nativeExportCorrespondenceKey } from "./javascriptNativeExportFacts.js";
+import { applicationNodeContentDigest } from "./javascriptApplicationFileIdentity.js";
 import { canonicalJson } from "../comparisonSemantics.js";
 import {
   compareUnicodeCodePoints,
@@ -195,10 +196,10 @@ const sortedCandidates = (
 const nodeIdentityKey = (node: ApplicationNode): string =>
   `node\0${node.kind}\0${node.node_id}`;
 
-const contentDigestKey = (node: ApplicationNode): string | null =>
-  node.identity.strategy === "content-digest"
-    ? `content\0${node.kind}\0${node.identity.sha256}`
-    : null;
+const contentDigestKey = (node: ApplicationNode): string | null => {
+  const digest = applicationNodeContentDigest(node);
+  return digest === null ? null : `content\0${node.kind}\0${digest}`;
+};
 
 const moduleSourceDigestKey = (node: ApplicationNode): string | null => {
   if (node.kind !== "javascript-module") return null;
@@ -218,11 +219,21 @@ const moduleSourceDigestKey = (node: ApplicationNode): string | null => {
   return value === null ? null : `module-source\0${node.kind}\0${value}`;
 };
 
-const sourceMapKey = (node: ApplicationNode): string | null =>
-  node.kind === "source-module" &&
-  node.identity.strategy === "source-map-original"
-    ? `source-map\0${canonicalJson([node.identity.source_root, node.identity.original_source])}`
-    : null;
+const sourceMapKey = (node: ApplicationNode): string | null => {
+  if (
+    node.kind !== "source-module" ||
+    node.identity.strategy !== "source-map-original"
+  )
+    return null;
+  const paths = new Set<string>();
+  for (const observation of node.observations) {
+    const resolution = observation.source_map_reference?.resolution;
+    if (resolution?.kind !== "artifact-relative") return null;
+    paths.add(resolution.path);
+  }
+  if (paths.size !== 1) return null;
+  return `source-map\0${canonicalJson([...paths])}`;
+};
 
 const structuralFingerprintKey = (node: ApplicationNode): string | null => {
   if (node.kind !== "javascript-module") return null;

@@ -23,6 +23,7 @@ import type { JavaScriptArtifactFile } from "../../domain/javascript/javascriptA
 import {
   addAstContainsEdge,
   artifactLocalIdentity,
+  artifactOccurrenceKey,
   fileOccurrenceIdentity,
   type JavaScriptArtifactGraphContext,
   type JavaScriptArtifactGraphCoverage,
@@ -350,7 +351,10 @@ const unresolvedModuleNode = (
     identity: artifactLocalIdentity(
       input.file.sha256,
       "unresolved-semantic-module",
-      `${resolution.resolution_status}:${specifier}`,
+      artifactOccurrenceKey(input.file, [
+        resolution.resolution_status,
+        specifier,
+      ]),
     ),
     observations: [
       {

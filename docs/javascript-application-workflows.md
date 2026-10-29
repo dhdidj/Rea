@@ -414,7 +414,7 @@ paths with exact identity to one current occurrence are merged. Fresh file
 observations carry their container digest, inventory path, and content digest.
 Their asset, source-module, and export-binding representations form one candidate,
 which retains `current_file_occurrence` and `representation_node_ids`. Equal bytes
-at two inventory paths remain two occurrences even when they share an asset node.
+at two inventory paths remain two occurrences with distinct asset nodes.
 Logical bundle modules and older observations without occurrence facts retain
 their graph identities; matching does not infer common ownership from a label.
 `removed` requires

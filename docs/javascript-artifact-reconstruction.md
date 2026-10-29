@@ -755,8 +755,10 @@ checked before and between bounded parsing and traversal phases; the synchronous
 Babel and JSON parser calls cannot be preempted mid-call, so their input byte
 bounds remain the hard protection for an individual call.
 
-Byte-identical assets share a content-digest node. Every distinct observation
-and inventoried containment edge is retained. If parsing or artifact safety
+Inventoried files and nested archives retain separate nodes for each container
+and path, even when their bytes are identical. Each node retains its content digest for exact-byte
+matching. Source-map original declarations also retain their map occurrence.
+Every distinct observation and inventoried containment edge is retained. If parsing or artifact safety
 boundaries omit input, coverage reports that omission; when an exact omission
 count is not knowable, `omitted_count` is `null` rather than a guessed value.
 

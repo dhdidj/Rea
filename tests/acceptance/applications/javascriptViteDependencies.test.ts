@@ -158,6 +158,12 @@ const initializeCache = "const initialize = __vite__mapDeps; initialize([]); ";
 
 const allScenarios: readonly ViteScenario[] = [
   {
+    file: "harmless-parameter-property-keys.js",
+    source: mapDependencies('["./first.js", {i: 0, arguments: 1}]', "[0]"),
+    resolved: ["first.js"],
+    unknown: false,
+  },
+  {
     file: "inherited-prototype-map-write.js",
     source: mapDependenciesWithEffects(
       'const key = "__proto__"; const proto = __vite__mapDeps([key])[0]; proto.map = () => ["./last.js"]; __vite__mapDeps([0]);',

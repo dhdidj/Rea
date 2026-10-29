@@ -72,11 +72,17 @@ import type { RelationshipCoverage } from "../../../src/domain/relationshipCover
 const schemaValidation = createMcpSchemaValidation();
 afterAll(() => schemaValidation.clear());
 
-const connect = async (
-  binaryLayout?: BinaryLayoutService,
-  webNetworkCapture?: WebNetworkCaptureService,
-  schemaProfile: "full" | "compact" = "full",
-) => {
+const connect = async ({
+  binaryLayout,
+  webNetworkCapture,
+  schemaProfile = "full",
+  maximumInputElements,
+}: {
+  readonly binaryLayout?: BinaryLayoutService;
+  readonly webNetworkCapture?: WebNetworkCaptureService;
+  readonly schemaProfile?: "full" | "compact";
+  readonly maximumInputElements?: number;
+} = {}) => {
   const session = createTestBinarySession(() => {
     throw new Error("selected views must not start a deep provider");
   });
@@ -87,6 +93,9 @@ const connect = async (
       environment: {
         ...process.env,
         REA_MCP_INPUT_SCHEMA_PROFILE: schemaProfile,
+        ...(maximumInputElements === undefined
+          ? {}
+          : { REA_MCP_MAX_INPUT_ELEMENTS: String(maximumInputElements) }),
       },
       ...(binaryLayout === undefined ? {} : { binaryLayout }),
       ...(webNetworkCapture === undefined ? {} : { webNetworkCapture }),
@@ -399,11 +408,7 @@ it("projects opted-in query names identically from retained and portable MCP Evi
 it.each(["full", "compact"] as const)(
   "advertises HAR MIME preview selection and keeps large bodies retained across MCP projections (%s)",
   async (schemaProfile) => {
-    const { client, session } = await connect(
-      undefined,
-      undefined,
-      schemaProfile,
-    );
+    const { client, session } = await connect({ schemaProfile });
     const capture = analysisViewCaptureFixture();
     capture.records = [capture.records[3]!, capture.records[1]!];
     capture.records.forEach((record) => {
@@ -632,7 +637,7 @@ it("advertises exact schemas and projects one layout section from retained Evide
     identity: BINARY_LAYOUT_TEST_PROVIDER,
     inspect: () => Promise.resolve(ok(layout)),
   });
-  const { client, session } = await connect(service);
+  const { client, session } = await connect({ binaryLayout: service });
   const { ajv, inputSchema, outputSchema } = await advertisedMcpToolSchemas(
     client,
     "inspect_analysis_view",
@@ -906,7 +911,9 @@ it("rejects self-contained WASM and EVM Evidence views when the subject format d
 });
 
 it("admits portable captures before SDK Evidence parsing and preserves capture caveats", async () => {
-  const { client } = await connect();
+  // Reach portable-capture memory admission with the 100,000-header fixture;
+  // the lower transport default has separate coverage.
+  const { client } = await connect({ maximumInputElements: 524_288 });
   const dense = analysisViewCaptureEvidence(analysisViewObjectDenseCapture());
   const refused = await client.callTool({
     name: "inspect_analysis_view",
@@ -1391,7 +1398,7 @@ it("projects an actual HAR capture retained by the public MCP workflow", async (
       });
     },
   });
-  const { client } = await connect(undefined, service);
+  const { client } = await connect({ webNetworkCapture: service });
   const captureResponse = await client.callTool({
     name: "inspect_web_network_capture",
     arguments: { capture_path: path, format: "har" },
@@ -1472,7 +1479,7 @@ it.each(PUBLISHED_EXAMPLES)(
           limitations: [],
         }),
     });
-    const { client } = await connect(undefined, service);
+    const { client } = await connect({ webNetworkCapture: service });
     const capture = await client.callTool({
       name: "inspect_web_network_capture",
       arguments: { capture_path: path, format: "har" },
@@ -1746,7 +1753,8 @@ it("advertises Mach-O pages whose selected facet owns their exact rows", async (
 });
 
 it("extracts an environment state identically from retained, portable and file MCP Evidence", async () => {
-  const { client, session } = await connect();
+  // Full inline capture conformance explicitly selects its transport allowance.
+  const { client, session } = await connect({ maximumInputElements: 8_192 });
   const { ajv, inputSchema, outputSchema } = await advertisedMcpToolSchemas(
     client,
     "inspect_analysis_view",
@@ -1820,7 +1828,7 @@ it("extracts an environment state identically from retained, portable and file M
 });
 
 it("reports environment coverage identically from retained, portable and file MCP Evidence", async () => {
-  const { client, session } = await connect();
+  const { client, session } = await connect({ maximumInputElements: 8_192 });
   const { ajv, inputSchema, outputSchema } = await advertisedMcpToolSchemas(
     client,
     "inspect_analysis_view",
@@ -1932,7 +1940,7 @@ it("accounts for every safe HTTP method in environment state and coverage", asyn
 });
 
 it("projects an environment manifest identically from retained, portable and file MCP Evidence", async () => {
-  const { client, session } = await connect();
+  const { client, session } = await connect({ maximumInputElements: 8_192 });
   const { ajv, inputSchema, outputSchema } = await advertisedMcpToolSchemas(
     client,
     "inspect_analysis_view",

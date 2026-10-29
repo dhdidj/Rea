@@ -1541,6 +1541,7 @@ const nativeMachoCompletion = (
             subject: target,
           },
           "observed",
+          { immutable: true },
         )
       : undefined;
   const completedFailure = nativeMachoCompletedFailure(completion?.value);

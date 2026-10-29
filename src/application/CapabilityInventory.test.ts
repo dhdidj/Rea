@@ -461,6 +461,31 @@ describe("compact tool availability", () => {
   });
 });
 
+it("reports target restrictions for navigation modes even when providers are declared", () => {
+  const capabilities = [
+    "current_document",
+    "current_address",
+    "resolve_containing_procedure",
+  ].map((operation) => ({ operation, available: true, reason: null }));
+  for (const kind of ["artifact", "archive"] as const) {
+    const navigation = entry(
+      "get_navigation_context",
+      status({ open: true, kind, capabilities }),
+    );
+    expect(navigation).toMatchObject({
+      available: false,
+      reason: "target_unsupported",
+      default_mode_available: false,
+      modes: [
+        { name: "current_selection", available: false },
+        { name: "explicit_document", available: false },
+      ],
+    });
+    for (const mode of navigation.modes ?? [])
+      expect(mode.remediation).toBe(navigation.remediation);
+  }
+});
+
 describe("partial navigation availability", () => {
   it("requires a target before diagnosing navigation provider modes", () => {
     expect(entry("get_navigation_context", status())).toMatchObject({

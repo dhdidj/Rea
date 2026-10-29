@@ -158,6 +158,28 @@ const initializeCache = "const initialize = __vite__mapDeps; initialize([]); ";
 
 const allScenarios: readonly ViteScenario[] = [
   {
+    file: "independent-inherited-prototype-copy.js",
+    source: mapDependenciesWithEffects(
+      'const proto=__vite__mapDeps(["__proto__"])[0]; const copy={...proto}; opaque(copy); __vite__mapDeps([0]);',
+    ),
+    callSources: ['__vite__mapDeps(["__proto__"])', defaultCall],
+    callOccurrences: [0, 1],
+    unknownCallOccurrences: [0],
+    resolved: ["first.js"],
+    unknown: true,
+  },
+  {
+    file: "conditional-inherited-prototype-copy.js",
+    source: mapDependenciesWithEffects(
+      'const proto=__vite__mapDeps(["__proto__"])[0]; if (flag) proto.extra=proto; const copy={...proto}; opaque(copy); __vite__mapDeps([0]);',
+    ),
+    callSources: ['__vite__mapDeps(["__proto__"])', defaultCall],
+    callOccurrences: [0, 1],
+    unknownCallOccurrences: [0, 1],
+    resolved: [],
+    unknown: true,
+  },
+  {
     file: "unknown-prototype-descriptor.js",
     source: mapDependenciesWithEffects(
       'Object.defineProperty(Array.prototype, "foo", externalDescriptor); __vite__mapDeps([0]);',

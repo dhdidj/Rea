@@ -1636,8 +1636,9 @@ and the identity dimension unknown.
   `normalization` defaults to `{ "rules": [] }` in the canonical scenario parser;
   this scenario-only default is omitted from the merged advertised input.
 
-The advertised schema includes complete nested capture fields and rejects
-incomplete pairs and structurally malformed captures. Mixed comparison families,
+The advertised schema rejects a lone capture, but each complete producer
+observation is an abbreviated object operand there: it carries no nested capture
+fields and does not reject a structurally malformed capture. Mixed comparison families,
 and `normalization` without both scenario captures, can pass advertised
 validation; the SDK rejects them against the canonical input schema before
 invoking the handler. Domain validation additionally checks

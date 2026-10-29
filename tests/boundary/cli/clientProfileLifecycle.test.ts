@@ -80,7 +80,34 @@ cliTest(
     await expect(access(`${upper}.rea.backup`)).rejects.toMatchObject({
       code: "ENOENT",
     });
+    // A foreign later fragment can inherit fields from an owned V1 entry.
+    const ownedLegacy = JSON.stringify({
+      mcp: {
+        servers: {},
+        rea: {
+          type: "local",
+          command: [PRODUCT_IDENTITY.cliBinary, "mcp"],
+          enabled: true,
+        },
+      },
+    });
+    const foreignPartial = JSON.stringify({
+      mcp: { servers: { rea: { command: ["/usr/bin/false"] } } },
+    });
+    await writeFile(lower, ownedLegacy);
+    await writeFile(upper, foreignPartial);
+    const legacyRefusal = await run();
+    expect(legacyRefusal.exitCode, legacyRefusal.stderr).toBe(1);
+    expect(legacyRefusal.json).toMatchObject({ status: "failed" });
+    expect(await readFile(lower, "utf8")).toBe(ownedLegacy);
+    expect(await readFile(upper, "utf8")).toBe(foreignPartial);
+    expect(await readFile(claude, "utf8")).toBe(claudeOriginal);
+    await expect(access(`${lower}.rea.backup`)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
     await writeFile(lower, "{}\n");
+    await writeFile(upper, native);
     const removed = await run();
     expect(removed.exitCode, removed.stderr).toBe(0);
     expect(removed.json).toMatchObject({ status: "complete" });

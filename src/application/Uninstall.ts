@@ -546,7 +546,10 @@ export const systemUninstallHost = (
         );
         if (!removal.ok)
           return item(client.name, "failed", removal.error.detail);
-        if (client.format === "opencode" && removal.value.removeNative) {
+        if (
+          client.format === "opencode" &&
+          (removal.value.removeNative || removal.value.legacyPath !== undefined)
+        ) {
           const originalLayers: ClientConfigurationSource[] = [];
           const remainingLayers: ClientConfigurationSource[] = [];
           for (const configPath of client.configPaths ?? [client.configPath]) {

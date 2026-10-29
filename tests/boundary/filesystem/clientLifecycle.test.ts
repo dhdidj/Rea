@@ -1787,6 +1787,50 @@ describe("uninstall registration ownership preflight", () => {
       readFile(`${config}.rea.backup`, "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("refuses an owned OpenCode V2 registration when a foreign V1 entry sits in another user file", async () => {
+    const home = await createTestTempDirectory(
+      "rea-uninstall-opencode-cross-file-fallback-",
+    );
+    const directory = join(home, ".config/opencode");
+    const json = join(directory, "opencode.json");
+    const jsonc = join(directory, "opencode.jsonc");
+    await mkdir(directory, { recursive: true });
+    const jsonOriginal = JSON.stringify({
+      mcp: { rea: { type: "local", command: ["/usr/bin/false"] } },
+    });
+    const jsoncOriginal = JSON.stringify({
+      mcp: {
+        servers: {
+          rea: {
+            type: "local",
+            command: [PRODUCT_IDENTITY.cliBinary, "mcp"],
+            disabled: false,
+          },
+        },
+      },
+    });
+    await writeFile(json, jsonOriginal);
+    await writeFile(jsonc, jsoncOriginal);
+
+    const result = await runUninstall(false, systemUninstallHost(home));
+
+    expect(result.status).toBe("failed");
+    expect(result.items).toContainEqual(
+      expect.objectContaining({ name: "opencode", status: "failed" }),
+    );
+    expect(result.items).toContainEqual(
+      expect.objectContaining({ name: "uninstall", status: "skipped" }),
+    );
+    expect(await readFile(json, "utf8")).toBe(jsonOriginal);
+    expect(await readFile(jsonc, "utf8")).toBe(jsoncOriginal);
+    await expect(readFile(`${json}.rea.backup`, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(readFile(`${jsonc}.rea.backup`, "utf8")).rejects.toMatchObject(
+      { code: "ENOENT" },
+    );
+  });
 });
 
 describe("layered uninstall outcomes", () => {

@@ -546,6 +546,11 @@ export const systemUninstallHost = (
           removal.value.legacyPath === undefined
         )
           return undefined;
+        if (
+          removal.value.removeNative &&
+          (await hasUnownedLegacyFallbackInSiblingFile(client, fileSystem))
+        )
+          return item(client.name, "failed", UNOWNED_LEGACY_FALLBACK_DETAIL);
         preflightOwnedClients.add(client);
         // A removal the running package would revert, or redirect into its
         // private storage, would leave the registration in place.
@@ -826,6 +831,57 @@ const SHADOWED_UNOWNED_MEMBER_DETAIL = `Configuration repeats the "${PRODUCT_IDE
 
 const UNOWNED_LEGACY_FALLBACK_DETAIL = `OpenCode falls back to the V1 "mcp.${PRODUCT_IDENTITY.mcpServerKey}" entry, which is not REA-owned; removing REA's native registration would activate it, so no change was made. Remove or replace that V1 entry manually, then rerun uninstall.`;
 
+/**
+ * A native removal in one layered file exposes a V1 entry in another file
+ * exactly like a V1 entry beside the native table in the same file: the
+ * merged registration reader falls back to it once the native row is gone.
+ * A V2 document carries its V1 rows beside the native table; a V1-only
+ * document carries them in its server table. Unreadable or malformed
+ * siblings are left to their own inspection, which already fails closed
+ * when applicability is established.
+ */
+const hasUnownedLegacyFallbackInSiblingFile = async (
+  client: UninstallClient,
+  fileSystem: UninstallFileSystem,
+): Promise<boolean> => {
+  const name = PRODUCT_IDENTITY.mcpServerKey;
+  for (const sibling of client.configPaths ?? []) {
+    if (sibling === client.configPath) continue;
+    let original: string;
+    try {
+      original = await fileSystem.readText(sibling);
+    } catch (cause: unknown) {
+      // A close failure after a completed read still carries the exact text
+      // in its retained outcome; any other read failure proves nothing here.
+      if (
+        !(cause instanceof RegularFileCleanupFailure) ||
+        cause.outcome.kind !== "completed" ||
+        typeof cause.outcome.value !== "string"
+      )
+        continue;
+      original = cause.outcome.value;
+    }
+    let parsed: ClientConfigurationDocument;
+    try {
+      parsed = parseClientConfiguration(original, client.format);
+    } catch {
+      continue;
+    }
+    const legacy =
+      parsed.dialect === "opencode_v2"
+        ? parsed.legacyServers[name]
+        : parsed.dialect === "opencode"
+          ? parsed.servers[name]
+          : undefined;
+    if (
+      legacy !== undefined &&
+      clientRegistrationOwnership(legacy, client) !== "owned"
+    )
+      return true;
+  }
+  return false;
+};
+
 /** Preserve the bytes uninstall is about to edit and return the backup holding them. */
 const backupClientConfiguration = async (
   client: SetupClient,
@@ -895,6 +951,13 @@ const removeClient = async (
       "retained",
       "The rea-named registration is not REA-owned.",
     );
+  // Preflight runs first, but a sibling V1 entry added between preflight and
+  // this reread must still stop the edit instead of exposing it.
+  if (
+    removeNative &&
+    (await hasUnownedLegacyFallbackInSiblingFile(client, fileSystem))
+  )
+    return item(client.name, "failed", UNOWNED_LEGACY_FALLBACK_DETAIL);
   const blocker = writeBlocker?.();
   if (blocker !== undefined) return item(client.name, "failed", blocker);
   const remaining = { ...parsed.servers };

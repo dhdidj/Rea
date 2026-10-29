@@ -28,9 +28,10 @@ import type {
   ViteCacheValue,
 } from "./javascriptViteCacheIdentityTypes.js";
 import { semanticObjectPropertyReferencesSteps } from "./javascriptSemanticObjectReferences.js";
-import type {
-  JavaScriptViteCacheTable,
-  JavaScriptViteHelperCandidate,
+import {
+  hasJavaScriptViteInheritedProperty,
+  type JavaScriptViteCacheTable,
+  type JavaScriptViteHelperCandidate,
 } from "./javascriptViteHelper.js";
 import { collectSemanticEsmExport } from "./javascriptSemanticProjection.js";
 
@@ -209,11 +210,19 @@ export function* invalidateJavaScriptViteCachesSteps(
     ) {
       const identity = identities.read(write.value);
       invalidate(identity?.owner);
+      const selfAssignment =
+        receiver?.inheritedArrayPrototype === true &&
+        receiver.owner === undefined &&
+        t.isIdentifier(write.receiver) &&
+        t.isIdentifier(write.value) &&
+        write.receiver.name === write.value.name &&
+        write.key !== null &&
+        !hasJavaScriptViteInheritedProperty(write.key, state);
       if (
         identity?.inheritedArrayPrototype === true ||
         identity?.intrinsicPrototype === true
       )
-        invalidate(null);
+        if (!selfAssignment) invalidate(null);
     }
   }
   if (

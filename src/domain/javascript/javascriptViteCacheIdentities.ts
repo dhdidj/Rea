@@ -12,6 +12,7 @@ import {
   type JavaScriptSemanticBindingState,
 } from "./javascriptSemanticState.js";
 import { semanticArrayIndex } from "./javascriptSemanticPropertyPaths.js";
+import { semanticReadPrecedesWrite } from "./javascriptSemanticMutationInitializers.js";
 import { semanticLoopValueSource } from "./javascriptSemanticIterationSources.js";
 import type { JavaScriptIntrinsicInvocation } from "./javascriptElectronMemberWrites.js";
 import {
@@ -98,11 +99,23 @@ const joinIdentity = (
     left.intrinsicPrototype === true || right.intrinsicPrototype === true
       ? true
       : undefined;
+  const childrenInheritedArrayPrototype =
+    left.childrenInheritedArrayPrototype === true ||
+    right.childrenInheritedArrayPrototype === true
+      ? true
+      : undefined;
+  const childrenIntrinsicPrototype =
+    left.childrenIntrinsicPrototype === true ||
+    right.childrenIntrinsicPrototype === true
+      ? true
+      : undefined;
   return allocation === left.allocation &&
     owner === left.owner &&
     children === left.children &&
     inheritedArrayPrototype === left.inheritedArrayPrototype &&
-    intrinsicPrototype === left.intrinsicPrototype
+    intrinsicPrototype === left.intrinsicPrototype &&
+    childrenInheritedArrayPrototype === left.childrenInheritedArrayPrototype &&
+    childrenIntrinsicPrototype === left.childrenIntrinsicPrototype
     ? left
     : {
         allocation,
@@ -112,6 +125,12 @@ const joinIdentity = (
           ? { inheritedArrayPrototype }
           : {}),
         ...(intrinsicPrototype === true ? { intrinsicPrototype } : {}),
+        ...(childrenInheritedArrayPrototype === true
+          ? { childrenInheritedArrayPrototype }
+          : {}),
+        ...(childrenIntrinsicPrototype === true
+          ? { childrenIntrinsicPrototype }
+          : {}),
       };
 };
 
@@ -157,6 +176,8 @@ export class ViteCacheIdentities {
 
   private readonly properties: ViteCacheProperties;
   private unknownInheritedRead: boolean | undefined;
+  private readonly copyMutationHazards = new Map<t.Node | undefined, Vertex>();
+  private readonly copyEffects: { node: t.Node; source: Vertex }[] = [];
   constructor(
     private readonly state: JavaScriptSemanticAnalysisState,
     private readonly invocation: (
@@ -485,7 +506,11 @@ export class ViteCacheIdentities {
               owner: undefined,
             };
             this.allocationVertices.set(copy.seed.allocation!, copy);
-            this.connect(copy, { kind: "copy-family", source: beforeCopy });
+            this.connect(copy, {
+              kind: "copy-family",
+              source: beforeCopy,
+              read: initializer.node,
+            });
             this.connect(target, {
               kind: "alias",
               source: this.project(
@@ -512,6 +537,7 @@ export class ViteCacheIdentities {
       // literal slots; it is not a later replacement of the helper's f property.
       if (this.cacheInitializations.has(write.node)) continue;
       const receiver = this.normalize(write.receiver);
+      this.copyEffects.push({ node: write.node, source: receiver });
       const receivers = this.writeReceivers.get(receiver) ?? [];
       receivers.push(write);
       this.writeReceivers.set(receiver, receivers);
@@ -525,6 +551,7 @@ export class ViteCacheIdentities {
           ? escape.value
           : this.vertices.get(escape.value);
       if (source === undefined) continue;
+      this.copyEffects.push({ node: escape.node, source });
       const receivers = this.exposureReceivers.get(source) ?? [];
       receivers.push(escape);
       this.exposureReceivers.set(source, receivers);
@@ -774,8 +801,14 @@ export class ViteCacheIdentities {
           ...(family.fact.inheritedArrayPrototype === true
             ? { inheritedArrayPrototype: true as const }
             : {}),
+          ...(family.fact.inheritedArrayPrototype === true
+            ? { childrenInheritedArrayPrototype: true as const }
+            : {}),
           ...(family.fact.intrinsicPrototype === true
             ? { intrinsicPrototype: true as const }
+            : {}),
+          ...(family.fact.intrinsicPrototype === true
+            ? { childrenIntrinsicPrototype: true as const }
             : {}),
         };
       }
@@ -784,20 +817,63 @@ export class ViteCacheIdentities {
       input.kind === "copy-family" && source.allocation?.kind === "cache"
         ? source.children
         : source.owner;
+    let inherited = source.inheritedArrayPrototype === true;
+    let intrinsic = source.intrinsicPrototype === true;
+    if (
+      input.kind === "copy-family" ||
+      (input.kind === "iteration-family" &&
+        !this.state.arrayIterationUnknown &&
+        source.allocation === null)
+    ) {
+      let unsafe = false;
+      if ((inherited || intrinsic) && this.snapshots) {
+        const hazard = yield* this.copyMutationHazardSteps(input.read);
+        hazard.listeners.add(vertex);
+        unsafe =
+          hazard.fact?.inheritedArrayPrototype === true ||
+          hazard.fact?.intrinsicPrototype === true;
+      }
+      inherited =
+        source.childrenInheritedArrayPrototype === true ||
+        (inherited && unsafe);
+      intrinsic =
+        source.childrenIntrinsicPrototype === true || (intrinsic && unsafe);
+    }
     return {
       allocation: vertex.seed?.allocation ?? null,
       owner,
       children: owner,
-      ...(source.inheritedArrayPrototype === true
-        ? { inheritedArrayPrototype: true as const }
-        : {}),
-      ...(source.intrinsicPrototype === true
-        ? { intrinsicPrototype: true as const }
-        : {}),
+      ...(inherited ? { inheritedArrayPrototype: true as const } : {}),
+      ...(inherited ? { childrenInheritedArrayPrototype: true as const } : {}),
+      ...(intrinsic ? { intrinsicPrototype: true as const } : {}),
+      ...(intrinsic ? { childrenIntrinsicPrototype: true as const } : {}),
       ...(input.kind === "mapped-family" && source.intrinsicPrototype === true
-        ? { inheritedArrayPrototype: true as const }
+        ? {
+            inheritedArrayPrototype: true as const,
+            childrenInheritedArrayPrototype: true as const,
+          }
         : {}),
     };
+  }
+
+  /** Only effects that may precede a copy can add enumerable values to it. */
+  private *copyMutationHazardSteps(
+    read: t.Node | undefined,
+  ): Generator<void, Vertex> {
+    const previous = this.copyMutationHazards.get(read);
+    if (previous !== undefined) return previous;
+    const hazard = this.vertex({});
+    this.copyMutationHazards.set(read, hazard);
+    let examined = 0;
+    for (const effect of this.copyEffects) {
+      if (examined++ % 1024 === 0) yield;
+      if (
+        read === undefined ||
+        !semanticReadPrecedesWrite(read, effect.node, this.state.parentsByNode)
+      )
+        this.connect(hazard, { kind: "family", source: effect.source });
+    }
+    return hazard;
   }
 
   private *helperResultSteps(
@@ -1281,11 +1357,13 @@ export class ViteCacheIdentities {
               ? "copy-family"
               : "family",
         source: normalized,
+        read: t.isSpreadElement(child) ? child : expression,
       });
       if (elementFamily !== undefined)
         this.connect(elementFamily, {
           kind: t.isSpreadElement(child) ? "iteration-family" : "family",
           source: normalized,
+          read: child,
         });
     }
     this.enqueue(vertex);
@@ -1335,10 +1413,15 @@ export class ViteCacheIdentities {
     if (
       input.key === "__proto__" &&
       (allocation.kind === "cache" ||
-        allocation.kind === "helper" ||
         t.isArrayExpression(allocation.node) ||
         allocation.helperResult !== undefined)
     )
+      return {
+        allocation: null,
+        owner: undefined,
+        inheritedArrayPrototype: true,
+      };
+    if (input.key === "__proto__" && allocation.kind === "helper")
       return { allocation: null, owner: null };
     if (allocation.kind === "helper") {
       const cache = this.allocations.get(allocation.owner ?? "");

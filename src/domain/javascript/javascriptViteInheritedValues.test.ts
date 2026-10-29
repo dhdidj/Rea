@@ -10,6 +10,96 @@ const candidates = (source: string) =>
     .map(({ specifier }) => specifier);
 
 describe("Vite inherited dependency values", () => {
+  it("copies enumerable prototype values without copying prototype identity", () => {
+    const init = `const proto=__vite__mapDeps(['__proto__'])[0];`;
+    for (const copy of [
+      `const copy={...proto};`,
+      `const {...copy}=proto;`,
+      `const copy=Object.assign({},proto);`,
+    ]) {
+      expect(
+        candidates(init + copy + ` opaque(copy); __vite__mapDeps([0]);`),
+      ).toEqual([null, "./first.js"]);
+      expect(
+        candidates(
+          init +
+            ` proto.extra=proto; ` +
+            copy +
+            ` opaque(copy); __vite__mapDeps([0]);`,
+        ),
+      ).toEqual([null, null]);
+    }
+    const getter = `Object.defineProperty(proto,'x',{enumerable:true,get(){return proto}});`;
+    expect(
+      candidates(
+        init +
+          getter +
+          `const copy={...proto}; opaque(copy); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, null]);
+    expect(
+      candidates(
+        init +
+          `opaque(proto); const copy={...proto}; opaque(copy); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, null]);
+    expect(
+      candidates(
+        init + `const copy=[...proto]; opaque(copy); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, "./first.js"]);
+    expect(
+      candidates(
+        init + `const copy=[proto]; opaque(copy); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, null]);
+    expect(
+      candidates(
+        init +
+          `const {x,...copy}={x:1,p:proto}; opaque(copy); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, null]);
+    expect(
+      candidates(
+        init +
+          `const copy={...proto}; proto.extra=proto; opaque(copy); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, "./first.js"]);
+    expect(
+      candidates(
+        init +
+          `const first={...proto}; proto.extra=proto; const second={...proto}; opaque(first); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, "./first.js"]);
+    expect(
+      candidates(
+        init +
+          `const first={...proto}; proto.extra=proto; const second={...proto}; opaque(second); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null, null]);
+    const setter = `Object.defineProperty(proto,'extra',{set(v){v.map=()=>['./last.js']},configurable:true}); const copy={...proto}; proto.extra=proto; opaque(copy); __vite__mapDeps([0]);`;
+    expect(candidates(init + setter)).toEqual([null, null]);
+    expect(
+      Array.from(runInNewContext(helper + init + setter, { opaque: () => {} })),
+    ).toEqual(["./last.js"]);
+    const getterWrite = `Object.defineProperty(proto,'x',{enumerable:true,get(){__vite__mapDeps.f[0]='./last.js';return 1}}); const copy={...proto}; __vite__mapDeps([0]);`;
+    expect(candidates(init + getterWrite)).toEqual([null, null]);
+    expect(Array.from(runInNewContext(helper + init + getterWrite))).toEqual([
+      "./last.js",
+    ]);
+    const changed =
+      init +
+      `proto.extra=proto; const copy={...proto}; opaque(copy); __vite__mapDeps([0]);`;
+    expect(
+      Array.from(
+        runInNewContext(helper + changed, {
+          opaque: (value: { extra: { map: () => string[] } }) => {
+            value.extra.map = () => ["./last.js"];
+          },
+        }),
+      ),
+    ).toEqual(["./last.js"]);
+  });
   it("retains effects from unproven property descriptors", () => {
     for (const method of ["Object.defineProperty", "Reflect.defineProperty"]) {
       const effect = `${method}(Array.prototype, 'foo', externalDescriptor); __vite__mapDeps([0]);`;

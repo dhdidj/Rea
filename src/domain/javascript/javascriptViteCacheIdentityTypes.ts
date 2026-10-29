@@ -33,8 +33,11 @@ export interface ViteCacheIdentity {
   readonly children?: string | null | undefined;
   /** A reachable value may be an inherited Array prototype or its constructor. */
   readonly inheritedArrayPrototype?: true;
+  /** Shared prototype identities reachable through contained values. */
+  readonly childrenInheritedArrayPrototype?: true;
   /** Intrinsic value that becomes exposed if selected by the helper. */
   readonly intrinsicPrototype?: true;
+  readonly childrenIntrinsicPrototype?: true;
 }
 
 export interface Vertex {
@@ -65,6 +68,7 @@ export type Input =
         | "copy-family"
         | "iteration-family";
       readonly source: Vertex;
+      readonly read?: t.Node;
     }
   | {
       readonly kind: "prototype";

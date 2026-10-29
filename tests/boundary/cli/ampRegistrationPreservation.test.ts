@@ -179,8 +179,10 @@ it("keeps the first Amp registration backup and secures later recovery copies", 
   await writeFile(settingsPath, settingsText);
 
   const backup = await writeAmpRegistrationBackup(settingsPath, settingsText);
-  expect(backup.ok).toBe(true);
-  if (!backup.ok) throw new Error(backup.error.detail);
+  if (!backup.ok)
+    throw new Error(
+      `${backup.error.kind} ${backup.error.path}: ${backup.error.detail}`,
+    );
   const backupPath = backup.value;
   expect(await readFile(backupPath, "utf8")).toBe(settingsText);
   if (process.platform !== "win32")
@@ -193,8 +195,10 @@ it("keeps the first Amp registration backup and secures later recovery copies", 
     settingsPath,
     updatedSettings,
   );
-  expect(updatedBackup.ok).toBe(true);
-  if (!updatedBackup.ok) throw new Error(updatedBackup.error.detail);
+  if (!updatedBackup.ok)
+    throw new Error(
+      `${updatedBackup.error.kind} ${updatedBackup.error.path}: ${updatedBackup.error.detail}`,
+    );
   const updatedBackupPath = updatedBackup.value;
   expect(updatedBackupPath).not.toBe(backupPath);
   expect(await readFile(updatedBackupPath, "utf8")).toBe(updatedSettings);

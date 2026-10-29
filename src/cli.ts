@@ -467,6 +467,13 @@ export const createCli = (
             }
             return runRegistration(backup.value);
           },
+          (cause: unknown) => {
+            const detail =
+              cause instanceof Error ? cause.message : String(cause);
+            reportValidationError(
+              `Unable to create Amp settings backup: ${detail}`,
+            );
+          },
         );
       }
     }

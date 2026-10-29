@@ -333,31 +333,58 @@ export const DONE_MICRO_ROWS: readonly TimedCaptureRow[] = DONE_CLOCK_ROWS.map(
   },
 );
 
-/** Tag PUTs whose owner is a user object: one names the owner by `ownerId`, the other leaves it out and the application clears it. */
-export const OWNER_NAMED_THEN_CLEARED_ROWS: readonly TimedCaptureRow[] =
-  (() => {
-    const [ada, bo] = [
-      { id: 3, name: "Ada" },
-      { id: 4, name: "Bo" },
-    ];
-    const tag = (id: number, name: string, owner: Entity | null): Entity => ({
-      id,
-      name,
-      owner,
-    });
-    const [inbox, bills] = [tag(1, "Inbox", bo), tag(2, "Bills", bo)];
-    const [triage, paid] = [tag(1, "Triage", ada), tag(2, "Paid", null)];
-    return [
-      ["GET", "/api/users", [ada, bo]],
-      ["GET", "/api/users/3", ada],
-      ["GET", "/api/users/4", bo],
-      ["GET", "/api/tags", [inbox, bills]],
-      ["GET", "/api/tags/1", inbox],
-      ["GET", "/api/tags/2", bills],
-      ["PUT", "/api/tags/1", triage, 200, { name: "Triage", ownerId: 3 }],
-      ["GET", "/api/tags/1", triage],
-      ["PUT", "/api/tags/2", paid, 200, { name: "Paid" }],
-      ["GET", "/api/tags/2", paid],
-      ["GET", "/api/tags", [triage, paid]],
-    ];
-  })();
+/** Tag PUTs whose owner is a user object, in the given order: one names the owner by `ownerId`, the other leaves it out and the application clears it. */
+const ownerReferencePuts = (
+  clearsFirst: boolean,
+): readonly TimedCaptureRow[] => {
+  const [ada, bo] = [
+    { id: 3, name: "Ada" },
+    { id: 4, name: "Bo" },
+  ];
+  const tag = (id: number, name: string, owner: Entity | null): Entity => ({
+    id,
+    name,
+    owner,
+  });
+  const [inbox, bills] = [tag(1, "Inbox", bo), tag(2, "Bills", bo)];
+  const named = tag(clearsFirst ? 2 : 1, clearsFirst ? "Paid" : "Triage", ada);
+  const cleared = tag(
+    clearsFirst ? 1 : 2,
+    clearsFirst ? "Triage" : "Paid",
+    null,
+  );
+  const put = (entity: Entity): TimedCaptureRow[] => [
+    [
+      "PUT",
+      `/api/tags/${String(entity["id"])}`,
+      entity,
+      200,
+      entity["owner"] === null
+        ? { name: entity["name"]! }
+        : { name: entity["name"]!, ownerId: 3 },
+    ],
+    ["GET", `/api/tags/${String(entity["id"])}`, entity],
+  ];
+  const [first, second] = clearsFirst ? [cleared, named] : [named, cleared];
+  return [
+    ["GET", "/api/users", [ada, bo]],
+    ["GET", "/api/users/3", ada],
+    ["GET", "/api/users/4", bo],
+    ["GET", "/api/tags", [inbox, bills]],
+    ["GET", "/api/tags/1", inbox],
+    ["GET", "/api/tags/2", bills],
+    ...put(first),
+    ...put(second),
+    [
+      "GET",
+      "/api/tags",
+      [first, second].sort((a, b) => Number(a["id"]) - Number(b["id"])),
+    ],
+  ];
+};
+
+/** A PUT naming the owner by `ownerId`, then one that leaves it out and clears it. */
+export const OWNER_NAMED_THEN_CLEARED_ROWS = ownerReferencePuts(false);
+
+/** A PUT that leaves the owner out and clears it, then one naming it by `ownerId`. */
+export const OWNER_CLEARED_THEN_NAMED_ROWS = ownerReferencePuts(true);

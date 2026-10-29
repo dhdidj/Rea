@@ -708,15 +708,15 @@ export const updateEntity = (
         explained,
       ) ||
       // A member calls left out is cleared by every one or by none.
-      defaultsDisagree(
-        explained.body.defaults,
-        { earlier: draft.updates },
-        rules,
-      ) ||
+      // A reference this call or an earlier one showed counts its member as the field's, whichever came first.
+      defaultsDisagree(explained.body.defaults, { earlier: draft.updates }, [
+        ...rules,
+        ...explained.rules,
+      ]) ||
       defaultsDisagree(
         draft.plan.body?.defaults,
         { earlier: [], sent: body, after: { ...read, ...after.object } },
-        rules,
+        [...rules, ...explained.rules],
       ))
   ) {
     if (!unknown) refuse(draft, step, "unexplained-change");

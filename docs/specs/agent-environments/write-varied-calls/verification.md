@@ -74,10 +74,10 @@ Greptile's review after main `21b19270` was merged in (`467ac78f`) raised three 
 - Serving stores an update's clock at a coarser read's precision from the answer's own digits, so an answer to the
   nanosecond read back to the microsecond keeps its microseconds.
 - A `PUT` that names a `reference` field's entity by its member supplies that field: it is not checked against, or
-  given, the default a `PUT` that left the field out showed.
+  given, the default a `PUT` that left the field out showed, whichever of the two calls came first.
 
-Their four tests fail on `467ac78f`. Gates pass but `knip`, whose one finding main `21b19270` reports too; `domain` +
-`services` 12,044 passed; focused boundaries 82 passed; the five MCP schema files 55 passed. Over the 148 captures, main
+Their tests fail on `467ac78f`, and the reference case with the clearing call first on `7030ca4d`. Gates pass but
+`knip`, whose one finding main `21b19270` reports too; `domain` + `services` 12,046 passed; focused boundaries 82 passed; the five MCP schema files 55 passed. Over the 148 captures, main
 serves 380 writes and this branch 392, with no plan or view changing from `467ac78f`.
 
 ## Not verified

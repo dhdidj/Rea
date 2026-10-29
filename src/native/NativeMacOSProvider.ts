@@ -13,6 +13,7 @@ import {
 } from "./NativePlistSource.js";
 import {
   bindArtifactFileCleanup,
+  artifactFileCompletion,
   artifactFilePrimaryFacts,
   artifactFileCancellationCause,
   ArtifactFileCleanupFailure,
@@ -246,7 +247,8 @@ class NativeMacOSClient implements AnalysisClient {
     private readonly tracer: NativeCallTracer,
     private readonly environment: Readonly<NodeJS.ProcessEnv>,
     private readonly privateRuntimeRootFactory:
-      SignatureRuntimeRootFactory | undefined,
+      | SignatureRuntimeRootFactory
+      | undefined,
     private readonly bundleResourceRoot?: ResolvedAppBundleResourceRoot,
     private readonly bundlePlistAvailable = true,
   ) {}
@@ -1329,7 +1331,8 @@ class NativeMacOSClient implements AnalysisClient {
       readonly timeoutMs: number;
       readonly acceptNonZero?: boolean;
       readonly acceptNonZeroIf?:
-        ((capture: NativeCommandCapture) => boolean) | undefined;
+        | ((capture: NativeCommandCapture) => boolean)
+        | undefined;
     },
   ): Promise<Result<NativeCommandCapture, AnalysisError>> {
     // Commands borrow their enclosing operation's admission through finalization.
@@ -1514,50 +1517,70 @@ const nativeMachoSourcePrimary = (
   });
 };
 
+const nativeMachoCompletion = (
+  cause: unknown,
+  target: BinaryTarget,
+  parameters: Readonly<Record<string, JsonValue>>,
+) => {
+  const completion = artifactFileCompletion(cause);
+  // The file operation only completes after the producer result has passed
+  // the final identity check. Its callback is owned by #inspectMacho.
+  const outcome = completion?.value as
+    | Result<NativeObservation, AnalysisError>
+    | undefined;
+  const observation =
+    outcome?.ok === true
+      ? createAnalysisExecutionEvidence(
+          "inspect_macho",
+          parameters,
+          {
+            ...createAnalysisExecution(outcome.value.result, IDENTITY, {
+              limitations: outcome.value.limitations,
+              locations: outcome.value.locations,
+            }),
+            subject: target,
+          },
+          "observed",
+        )
+      : undefined;
+  const completedFailure = nativeMachoCompletedFailure(completion?.value);
+  const completionCancellation =
+    completion?.cancellation === undefined
+      ? undefined
+      : new AnalysisCancelledError("inspect_macho", {
+          cause: completion.cancellation.reason,
+          ...(completedFailure === undefined ||
+          (cause instanceof ArtifactReaderFailure &&
+            cause.cleanup !== undefined)
+            ? {}
+            : {
+                diagnostics: {
+                  previous_error: jsonValueSchema.parse(
+                    projectAnalysisError(completedFailure),
+                  ),
+                },
+              }),
+        });
+  return { observation, completedFailure, completionCancellation };
+};
+
 const nativeMachoSourceFailure = (
   cause: unknown,
   target: BinaryTarget,
   parameters: Readonly<Record<string, JsonValue>>,
 ): AnalysisError => {
+  const { observation, completedFailure, completionCancellation } =
+    nativeMachoCompletion(cause, target, parameters);
   if (cause instanceof ArtifactReaderFailure && cause.cleanup !== undefined) {
     const physical =
       cause instanceof ArtifactFileCleanupFailure
         ? cause.fileCleanupFailure
         : undefined;
-    // The file operation only completes after the producer result has passed
-    // the final identity check. Its callback is owned by #inspectMacho.
-    const outcome =
-      physical?.outcome.kind === "completed"
-        ? (physical.outcome.value as Result<NativeObservation, AnalysisError>)
-        : undefined;
-    const observation =
-      outcome?.ok === true
-        ? createAnalysisExecutionEvidence(
-            "inspect_macho",
-            parameters,
-            {
-              ...createAnalysisExecution(outcome.value.result, IDENTITY, {
-                limitations: outcome.value.limitations,
-                locations: outcome.value.locations,
-              }),
-              subject: target,
-            },
-            "observed",
-          )
-        : undefined;
-    const completionCancellation =
-      physical?.completionCancellation === undefined
-        ? undefined
-        : new AnalysisCancelledError("inspect_macho", {
-            cause: physical.completionCancellation.reason,
-            partialObservation: observation,
-          });
     const previous =
       physical?.outcome.kind === "failed"
         ? nativeMachoSourcePrimary(artifactFilePrimaryFacts(cause), target.path)
         : physical?.outcome.kind === "completed"
-          ? (nativeMachoCompletedFailure(physical.outcome.value) ??
-            completionCancellation)
+          ? (completedFailure ?? completionCancellation)
           : completionCancellation;
     const failure = new ProviderCleanupError(
       IDENTITY.id,
@@ -1587,8 +1610,17 @@ const nativeMachoSourceFailure = (
           : {}),
       },
     );
+    // Do not embed the potentially large observation in the projected
+    // cancellation diagnostics as well as the cleanup error's observation.
+    if (observation !== undefined)
+      completionCancellation?.retainPartialObservation(observation);
     bindArtifactFileCleanup(cause, failure);
     return failure;
+  }
+  if (completionCancellation !== undefined) {
+    if (observation !== undefined)
+      completionCancellation.retainPartialObservation(observation);
+    return completionCancellation;
   }
   return nativeMachoSourcePrimary(artifactFilePrimaryFacts(cause), target.path);
 };

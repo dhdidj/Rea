@@ -84,6 +84,9 @@ it.each([false, true])(
         cause: reason,
         partialObservation: result.error.partialObservation,
       });
+      expect(result.error.diagnostics?.previous_error).not.toHaveProperty(
+        "details.partial_observation",
+      );
     } else {
       expect(result.error.cleanupPrimary).toBeUndefined();
       expect(result.error.completedObservation).toEqual(
@@ -102,6 +105,81 @@ it.each([false, true])(
       expect(result.error.cleanupPrimary?.partialObservation).toEqual(
         result.error.partialObservation,
       );
+  },
+);
+
+it.each([false, true])(
+  "retains the producer outcome when cancellation arrives during successful close (producer fails: %s)",
+  async (producerFails) => {
+    const root = await createTestTempDirectory("rea-macho-cancel-close-");
+    const path = join(root, "fixture.macho");
+    await writeFile(path, inspectionImage());
+    const target = await nativeMachoTargetForFile(path);
+    const probe = await open(path, "r");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    await probe.close();
+    const client = new NativeMacOSProvider(
+      {},
+      new NativeFixtureRunner({
+        lipo: producerFails
+          ? "unrecognized producer output\n"
+          : `Non-fat file: ${path} is architecture: arm64\n`,
+      }),
+      "darwin",
+    ).createClient(target);
+    const controller = new AbortController();
+    const reason = new Error("cancelled during successful close");
+    const original = prototype.stat;
+    const stat = vi
+      .spyOn(prototype, "stat")
+      .mockImplementationOnce(async function (
+        this: FileHandle,
+        ...args: Parameters<FileHandle["stat"]>
+      ) {
+        const close = this.close.bind(this);
+        this.close = async () => {
+          controller.abort(reason);
+          await close();
+        };
+        return Reflect.apply(original, this, args);
+      });
+    onTestFinished(async () => {
+      stat.mockRestore();
+      await client.close();
+    });
+    const result = await client.execute(
+      "inspect_macho",
+      {},
+      { signal: controller.signal },
+    );
+    if (result.ok) throw new Error("Expected cancellation");
+    expect(result.error).toMatchObject({
+      _tag: "AnalysisCancelledError",
+      cause: reason,
+      cleanupIncomplete: false,
+    });
+    if (producerFails) {
+      expect(result.error.partialObservation).toBeUndefined();
+      expect(projectAnalysisError(result.error)).toMatchObject({
+        details: {
+          diagnostics: {
+            previous_error: {
+              code: "unreadable_output",
+              details: {
+                captured_output: { stdout: "unrecognized producer output\n" },
+              },
+            },
+          },
+        },
+      });
+    } else {
+      expect(result.error.partialObservation).toMatchObject({
+        operation: "inspect_macho",
+        subject: { local_path: path, digest: { sha256: target.sha256 } },
+        normalized_result: { provenance: expect.any(Array) },
+      });
+    }
+    expect((await client.close()).ok).toBe(true);
   },
 );
 vi.mock("./MachoCommandNames.js", async (importOriginal) => {

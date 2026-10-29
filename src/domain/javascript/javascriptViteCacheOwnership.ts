@@ -51,18 +51,20 @@ const ARRAY_MUTATORS = new Set([
 const identityPaths = (
   identity: ViteCacheIdentity | undefined,
 ): readonly CachePath[] => {
-  if (identity?.owner === undefined) return [];
+  if (identity === undefined) return [];
+  const paths: CachePath[] =
+    identity.inheritedArrayPrototype === true
+      ? [["inherited-array-prototype", null]]
+      : [];
+  if (identity.owner === undefined) return paths;
   const allocation = identity.allocation;
   if (allocation?.kind === "container" || allocation?.kind === "foreign")
-    return [];
-  return [
-    [
-      allocation?.kind ?? "unknown",
-      allocation?.kind === "helper"
-        ? (allocation.owner ?? null)
-        : identity.owner,
-    ],
-  ];
+    return paths;
+  paths.push([
+    allocation?.kind ?? "unknown",
+    allocation?.kind === "helper" ? (allocation.owner ?? null) : identity.owner,
+  ]);
+  return paths;
 };
 
 const numericSlot = (key: string | null | undefined): boolean =>
@@ -149,6 +151,18 @@ export function* invalidateJavaScriptViteCachesSteps(
     if (initializations.has(node)) return;
     const [kind, owner, key] = path;
     reads.recordWrite(path);
+    if (kind === "inherited-array-prototype") {
+      // Shared prototype writes may alter every admitted table's lookup or map.
+      if (
+        key === "map" ||
+        key === "constructor" ||
+        key === "prototype" ||
+        key === "__proto__" ||
+        numericSlot(key)
+      )
+        invalidate(null);
+      return;
+    }
     if (kind === "helper" && path.length > 2 && key !== "f" && key !== null)
       return;
     if (kind === "cache" && !numericSlot(key)) return;
@@ -156,7 +170,11 @@ export function* invalidateJavaScriptViteCachesSteps(
   };
   for (const escape of escapes) {
     if (examined++ % 1024 === 0) yield;
-    invalidate(identities.read(escape.value)?.owner);
+    {
+      const identity = identities.read(escape.value);
+      invalidate(identity?.owner);
+      if (identity?.inheritedArrayPrototype === true) invalidate(null);
+    }
   }
   yield* retainImplicitReceiverEffectsSteps(program, context, invalidate);
   yield* collectJavaScriptIdentityWritesSteps(
@@ -182,8 +200,11 @@ export function* invalidateJavaScriptViteCachesSteps(
       receiver?.allocation?.kind !== "container" &&
       receiver?.allocation?.kind !== "cache" &&
       receiver?.allocation?.kind !== "helper"
-    )
-      invalidate(identities.read(write.value)?.owner);
+    ) {
+      const identity = identities.read(write.value);
+      invalidate(identity?.owner);
+      if (identity?.inheritedArrayPrototype === true) invalidate(null);
+    }
   }
   if (
     state.ambientWrites.covers(["global", "Function", "prototype", "f"]) ||
@@ -826,8 +847,11 @@ function* retainCallEffectsSteps(
         direct.method,
         call.arguments,
       ))
-    )
-      invalidate(identities.read(direct.receiver)?.owner);
+    ) {
+      const identity = identities.read(direct.receiver);
+      invalidate(identity?.owner);
+      if (identity?.inheritedArrayPrototype === true) invalidate(null);
+    }
   }
   if (!arrayInvocation(invocation) || invocation?.receiver === undefined)
     return;
@@ -847,8 +871,10 @@ function* retainCallEffectsSteps(
       invocation.arguments,
       true,
     ))
-  )
+  ) {
     invalidate(receiver?.owner);
+    if (receiver?.inheritedArrayPrototype === true) invalidate(null);
+  }
 }
 
 /** Property access and iteration can dispatch user code without a call node. */

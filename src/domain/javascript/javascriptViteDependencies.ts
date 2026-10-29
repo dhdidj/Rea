@@ -9,6 +9,7 @@ import {
   isJavaScriptViteDefaultUndefined,
   readJavaScriptViteHelper,
   readJavaScriptViteTableSlotsSteps,
+  tableMayAffectIndexesSteps,
   javaScriptViteTableHasOwnSlot,
   type JavaScriptViteHelperCandidate,
   type JavaScriptViteCacheTable,
@@ -124,6 +125,7 @@ function* viteBindingTablesSteps(
     const initializer = semanticStableInitializer(binding, state);
     const unchanged =
       !uncertain &&
+      !(yield* tableMayAffectIndexesSteps(table, helper, state)) &&
       !semanticBindingMayHaveOpaqueEffect(
         binding,
         state,

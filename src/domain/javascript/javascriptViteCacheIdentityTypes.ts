@@ -31,6 +31,8 @@ export interface ViteCacheIdentity {
   readonly owner: string | null | undefined;
   /** reachable children exclude the allocation itself, including cache roots. */
   readonly children?: string | null | undefined;
+  /** A reachable value may be an inherited Array prototype or its constructor. */
+  readonly inheritedArrayPrototype?: true;
 }
 
 export interface Vertex {

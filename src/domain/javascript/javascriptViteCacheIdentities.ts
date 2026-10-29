@@ -1,4 +1,5 @@
 import * as t from "@babel/types";
+import { evaluateSemanticExpression } from "./javascriptSemanticValues.js";
 
 import {
   semanticStaticPropertyKey,
@@ -47,6 +48,18 @@ const providedDefaultInput = (
   input.defined ||
   (source?.allocation != null && source.allocation.kind !== "foreign");
 
+const mayBeInheritedPrototypeKey = (
+  value: ReturnType<typeof evaluateSemanticExpression>,
+): boolean => {
+  const isInherited = (item: string | number | boolean | null): boolean =>
+    item === "__proto__" || item === "constructor";
+  return value.status === "literal"
+    ? isInherited(value.value)
+    : value.status === "union"
+      ? value.values.some(isInherited)
+      : true;
+};
+
 const OBJECT_TARGET_RESULTS = new Set([
   "assign",
   "defineProperty",
@@ -76,11 +89,24 @@ const joinIdentity = (
     left.allocation === right.allocation ? left.allocation : null;
   const owner = joinOwner(left.owner, right.owner);
   const children = joinOwner(left.children, right.children);
+  const inheritedArrayPrototype =
+    left.inheritedArrayPrototype === true ||
+    right.inheritedArrayPrototype === true
+      ? true
+      : undefined;
   return allocation === left.allocation &&
     owner === left.owner &&
-    children === left.children
+    children === left.children &&
+    inheritedArrayPrototype === left.inheritedArrayPrototype
     ? left
-    : { allocation, owner, children };
+    : {
+        allocation,
+        owner,
+        children,
+        ...(inheritedArrayPrototype === true
+          ? { inheritedArrayPrototype }
+          : {}),
+      };
 };
 
 /** normalize expressions once; joins never retain a helper-owner set per alias. */
@@ -150,7 +176,10 @@ export class ViteCacheIdentities {
   /** awaiting iterated values exposes contained references, not the array itself. */
   containedValues(node: t.Node): ViteCacheValue {
     const values = this.vertex({});
-    this.connect(values, { kind: "copy-family", source: this.normalize(node) });
+    this.connect(values, {
+      kind: "iteration-family",
+      source: this.normalize(node),
+    });
     return values;
   }
 
@@ -694,6 +723,9 @@ export class ViteCacheIdentities {
           allocation: vertex.seed?.allocation ?? null,
           owner: family.fact.owner,
           children: family.fact.owner,
+          ...(family.fact.inheritedArrayPrototype === true
+            ? { inheritedArrayPrototype: true as const }
+            : {}),
         };
       }
     }
@@ -705,6 +737,9 @@ export class ViteCacheIdentities {
       allocation: vertex.seed?.allocation ?? null,
       owner,
       children: owner,
+      ...(source.inheritedArrayPrototype === true
+        ? { inheritedArrayPrototype: true as const }
+        : {}),
     };
   }
 
@@ -739,11 +774,26 @@ export class ViteCacheIdentities {
         ? undefined
         : 0;
       let uncertain = !t.isArrayExpression(selection);
+      let inheritedValue = false;
       if (t.isArrayExpression(selection)) {
         let examined = 0;
         for (const index of selection.elements) {
           if (examined++ % 1024 === 0) yield;
           if (t.isSpreadElement(index)) {
+            const spread = evaluateSemanticExpression(
+              index.argument,
+              this.state,
+              input.call,
+            );
+            inheritedValue ||=
+              this.state.arrayIterationUnknown ||
+              spread.status !== "array" ||
+              spread.unknownItems ||
+              spread.items.some(
+                (item) =>
+                  item.presence !== "present" ||
+                  mayBeInheritedPrototypeKey(item.value),
+              );
             unknownFrom = keys.length;
             uncertain = true;
             break;
@@ -756,13 +806,35 @@ export class ViteCacheIdentities {
               : semanticStaticPropertyKey(index, true);
           keys.push(key);
           if (key === undefined) continue;
-          if (key === null) uncertain = true;
-          else {
+          if (key === null) {
+            uncertain = true;
+            inheritedValue ||=
+              index === null ||
+              mayBeInheritedPrototypeKey(
+                evaluateSemanticExpression(index, this.state, input.call),
+              );
+          } else {
+            if (key === "__proto__" || key === "constructor")
+              inheritedValue = true;
             const selected = this.project(table, [key], input.call);
             this.connect(result, { kind: "family", source: selected });
             this.connect(elementFamily, { kind: "family", source: selected });
           }
         }
+      }
+      if (inheritedValue || !t.isArrayExpression(selection)) {
+        // A missing or unknown table key can yield a shared inherited value,
+        // such as Array.prototype, even when every owned table slot is a string.
+        // Keep that value separate from the cache array's own identity.
+        const inherited = this.vertex({});
+        inherited.seed = {
+          allocation: null,
+          owner: undefined,
+          inheritedArrayPrototype: true,
+        };
+        this.enqueue(inherited);
+        this.connect(result, { kind: "family", source: inherited });
+        this.connect(elementFamily, { kind: "family", source: inherited });
       }
       if (uncertain) {
         this.connect(result, { kind: "copy-family", source: table });
@@ -1102,7 +1174,11 @@ export class ViteCacheIdentities {
       const normalized = this.normalize(value);
       this.connect(vertex, {
         kind:
-          t.isSpreadElement(child) || shallowCopy ? "copy-family" : "family",
+          t.isSpreadElement(child) && elementFamily !== undefined
+            ? "iteration-family"
+            : t.isSpreadElement(child) || shallowCopy
+              ? "copy-family"
+              : "family",
         source: normalized,
       });
       if (elementFamily !== undefined)
@@ -1144,7 +1220,14 @@ export class ViteCacheIdentities {
     target: Vertex,
   ): Generator<void, ViteCacheIdentity | undefined> {
     const allocation = source.allocation;
-    if (allocation === null) return { allocation: null, owner: source.owner };
+    if (allocation === null)
+      return {
+        allocation: null,
+        owner: source.owner,
+        ...(source.inheritedArrayPrototype === true
+          ? { inheritedArrayPrototype: true as const }
+          : {}),
+      };
     if (
       input.key === "__proto__" &&
       (allocation.kind === "cache" ||
@@ -1174,7 +1257,14 @@ export class ViteCacheIdentities {
       allocation.kind !== "helper"
     )
       return FOREIGN;
-    if (input.key === null) return { allocation: null, owner: source.owner };
+    if (input.key === null)
+      return {
+        allocation: null,
+        owner: source.owner,
+        ...(source.inheritedArrayPrototype === true
+          ? { inheritedArrayPrototype: true as const }
+          : {}),
+      };
     const slot = yield* this.properties.slotSteps(allocation, input.key);
     const selected = this.snapshots
       ? yield* this.properties.snapshotSteps(
@@ -1188,7 +1278,13 @@ export class ViteCacheIdentities {
     const fact = selected.fact;
     if (fact === undefined) return undefined;
     return fact.allocation === null && fact.owner === undefined
-      ? { allocation: null, owner: source.owner }
+      ? {
+          allocation: null,
+          owner: source.owner,
+          ...(source.inheritedArrayPrototype === true
+            ? { inheritedArrayPrototype: true as const }
+            : {}),
+        }
       : fact;
   }
 }

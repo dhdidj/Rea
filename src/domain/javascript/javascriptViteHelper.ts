@@ -139,12 +139,6 @@ export const readJavaScriptViteHelper = (
     cacheReads: [cache.left, cache.right.left],
     uncertain:
       defaults.uncertain ||
-      tableMayAffectIndexes(
-        cache.right.right,
-        helper,
-        defaults.indexes,
-        state,
-      ) ||
       state.ambientWrites.covers(["global", "Array", "prototype", "map"]) ||
       state.ambientWrites.covers(["global", "Function", "prototype", "f"]) ||
       state.ambientWrites.covers(["global", "Object", "prototype", "f"]),
@@ -152,18 +146,19 @@ export const readJavaScriptViteHelper = (
 };
 
 /** Table initializers run before projection and may change or expose its input. */
-const tableMayAffectIndexes = (
+export function* tableMayAffectIndexesSteps(
   table: t.ArrayExpression,
   helper: ViteHelper,
-  indexes: string,
   state: JavaScriptSemanticAnalysisState,
-): boolean => {
+): Generator<void, boolean> {
   const parameter = helper.params[0];
   if (!t.isIdentifier(parameter)) return true;
+  const indexes = parameter.name;
   const binding = resolveSemanticBindingState(state, parameter, indexes);
   if (binding === undefined) return true;
   let examined = 0;
-  for (const element of table.elements) {
+  for (const [index, element] of table.elements.entries()) {
+    if (index % 1024 === 0) yield;
     if (element === null || readExactJavaScriptLiteral(element).found) continue;
     const pending: t.Node[] = [element];
     while (pending.length > 0) {
@@ -197,7 +192,7 @@ const tableMayAffectIndexes = (
     }
   }
   return false;
-};
+}
 
 const viteHelperDeclaration = (
   node: t.Node,

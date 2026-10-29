@@ -158,6 +158,47 @@ const initializeCache = "const initialize = __vite__mapDeps; initialize([]); ";
 
 const allScenarios: readonly ViteScenario[] = [
   {
+    file: "inherited-prototype-map-write.js",
+    source: mapDependenciesWithEffects(
+      'const key = "__proto__"; const proto = __vite__mapDeps([key])[0]; proto.map = () => ["./last.js"]; __vite__mapDeps([0]);',
+      '["./first.js", "./last.js"]',
+    ),
+    callSources: ["__vite__mapDeps([key])", "__vite__mapDeps([0])"],
+    callOccurrences: [0, 1],
+    unknownCallOccurrences: [0, 1],
+    resolved: [],
+    unknown: true,
+  },
+  {
+    file: "array-spread-omits-named-cache.js",
+    source: mapDependenciesWithEffects(
+      initializeCache +
+        'const items = ["text"]; items.extra = __vite__mapDeps.f; const copy = [...items]; opaque(copy); __vite__mapDeps([0]);',
+    ),
+    resolved: ["first.js"],
+    unknown: false,
+  },
+  {
+    file: "object-spread-copies-named-cache.js",
+    source: mapDependenciesWithEffects(
+      initializeCache +
+        'const items = ["text"]; items.extra = __vite__mapDeps.f; const copy = {...items}; opaque(copy); __vite__mapDeps([0]);',
+    ),
+    resolved: [],
+    unknown: true,
+  },
+  {
+    file: "babel-default-reassigns-index.js",
+    source: `function __vite__mapDeps(i) {
+      var m = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : __vite__mapDeps;
+      var d = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : (m.f || (m.f = [(i = []), "./first.js"]));
+      return i.map(function (n) { return d[n]; });
+    } __vite__mapDeps([1]);`,
+    callSource: "__vite__mapDeps([1])",
+    resolved: [],
+    unknown: true,
+  },
+  {
     file: "for-of-cache-object-value-escape.js",
     callOccurrences: [0, 1],
     source:

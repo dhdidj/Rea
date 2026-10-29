@@ -102,7 +102,7 @@ events alone do not establish lower token cost.
 Full static checks passed (two tasks, no cache hits): 89.441 s wall,
 88.630288 family CPU s and 4,337,172,480 peak cgroup bytes, with no OOM.
 Documentation checks also passed (6 tasks plus five README consistency cases).
-The [selected JSON record](electron-ipc-listeners-2026-10-16.json) retains exact
+The [selected JSON record](https://github.com/morluto/rea/blob/main/docs/verification/electron-ipc-listeners-2026-10-16.json) retains exact
 source/input identities, failed attempts, coverage, IPC and resource receipts.
 Historical diagnostic helper hashes were not captured and remain explicitly
 unknown; the frozen hash is not assigned to them retrospectively.

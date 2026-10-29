@@ -547,7 +547,7 @@ export class IdaSessionClient implements AnalysisClient {
           reason:
             cause instanceof Error ? cause.message : "Unknown upstream failure",
           recovery:
-            "Check the configured upstream MCP registration and selected target; see docs/ida-provider.md.",
+            "Check the configured upstream MCP registration and selected target; see docs/providers/ida-provider.md.",
         },
       });
     if (artifactFailure?.cleanup !== undefined) {
@@ -686,7 +686,7 @@ export class IdaSessionClient implements AnalysisClient {
           expected_profile: profile.diagnosticIdentity,
           missing_tools: [...missing],
           recovery:
-            "Install an IDA MCP build that serves the selected profile; see docs/ida-provider.md.",
+            "Install an IDA MCP build that serves the selected profile; see docs/providers/ida-provider.md.",
         },
       });
     }

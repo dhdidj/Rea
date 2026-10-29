@@ -119,5 +119,29 @@ cliTest(
       ]),
     });
     expect(await readFile(arraySettings, "utf8")).toBe(array);
+
+    // A backup write failure is reported as a filesystem problem, not as bad
+    // JSON. Tighten the mode of an existing backup path before using it.
+    const backupHome = join(root, "backup-error");
+    const backupSettings = ampSettings(backupHome);
+    const backupPath = `${backupSettings}.rea.backup`;
+    await mkdir(join(backupHome, ".config", "amp"), { recursive: true });
+    await writeFile(backupSettings, '{"amp.mcpServers": {}}\n');
+    await mkdir(backupPath);
+    const backupRejected = await cli.run({
+      arguments: ["mcp", "add", "--agent", "amp", "--json"],
+      cwd: root,
+      environment: { HOME: backupHome, USERPROFILE: backupHome },
+      timeoutMs: 20_000,
+    });
+    expect(backupRejected.exitCode, backupRejected.stderr).toBe(1);
+    expect(backupRejected.json).toMatchObject({
+      code: "VALIDATION_ERROR",
+      message: expect.stringContaining("Unable to create Amp settings backup"),
+    });
+    expect(backupRejected.json.message).not.toContain("not valid JSON");
+    const { stat } = await import("node:fs/promises");
+    if (process.platform !== "win32")
+      expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
   },
 );

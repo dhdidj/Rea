@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { registerGpuCommands } from "./cli/gpuCommands.js";
@@ -290,35 +296,56 @@ export const createCli = (
         ) || command.includes("--agent=amp");
       if (ampRequested) {
         const settingsPath = join(homedir(), ".config", "amp", "settings.json");
+        const backupPath = `${settingsPath}.rea.backup`;
         let priorEnv: unknown;
         let guardError: string | undefined;
+        let settingsText: string | undefined;
+        let parsedSettings: Record<string, unknown> | undefined;
         try {
-          if (existsSync(settingsPath)) {
-            const text = readFileSync(settingsPath, "utf8");
-            const parsed = JSON.parse(text) as Record<string, unknown>;
-            const servers = parsed["amp.mcpServers"];
-            if (
-              servers !== undefined &&
-              (typeof servers !== "object" ||
-                servers === null ||
-                Array.isArray(servers))
-            )
-              guardError =
-                "amp.mcpServers must be an object in Amp settings.json.";
-            else {
-              const entry =
-                typeof servers === "object" && servers !== null
-                  ? (servers as Record<string, unknown>)["rea"]
-                  : undefined;
-              if (typeof entry === "object" && entry !== null)
-                priorEnv = (entry as Record<string, unknown>)["env"];
-              writeFileSync(`${settingsPath}.rea.backup`, text);
-            }
-          }
+          if (existsSync(settingsPath))
+            settingsText = readFileSync(settingsPath, "utf8");
         } catch (cause) {
-          guardError = `Amp settings.json is not valid JSON: ${
+          guardError = `Unable to read Amp settings.json: ${
             cause instanceof Error ? cause.message : String(cause)
           }`;
+        }
+        if (settingsText !== undefined) {
+          try {
+            parsedSettings = JSON.parse(settingsText) as Record<string, unknown>;
+          } catch (cause) {
+            guardError = `Amp settings.json is not valid JSON: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`;
+          }
+        }
+        if (parsedSettings !== undefined && settingsText !== undefined) {
+          const servers = parsedSettings["amp.mcpServers"];
+          if (
+            servers !== undefined &&
+            (typeof servers !== "object" ||
+              servers === null ||
+              Array.isArray(servers))
+          )
+            guardError =
+              "amp.mcpServers must be an object in Amp settings.json.";
+          else {
+            const entry =
+              typeof servers === "object" && servers !== null
+                ? (servers as Record<string, unknown>)["rea"]
+                : undefined;
+            if (typeof entry === "object" && entry !== null)
+              priorEnv = (entry as Record<string, unknown>)["env"];
+            try {
+              // Backups can contain environment credentials. Restrict both
+              // new and pre-existing backups before copying the settings.
+              if (existsSync(backupPath)) chmodSync(backupPath, 0o600);
+              writeFileSync(backupPath, settingsText, { mode: 0o600 });
+            } catch (cause) {
+              guardError = `Unable to create Amp settings backup: ${
+                cause instanceof Error ? cause.message : String(cause)
+              }`;
+            }
+          }
         }
         if (guardError !== undefined) {
           const message = `${guardError} Fix it before registering.`;
@@ -426,7 +453,6 @@ export const createCli = (
           } else {
             // Registration verified: drop the backup left in the home
             // directory. On failure the backup stays for manual recovery.
-            const backupPath = `${settingsPath}.rea.backup`;
             if (existsSync(backupPath)) unlinkSync(backupPath);
           }
         });

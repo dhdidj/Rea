@@ -1,4 +1,5 @@
 import { chmodSync, lstatSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 
 import { preserveCurrentRecoveryBackup } from "../application/SetupRecoveryBackup.js";
 
@@ -20,6 +21,16 @@ const restrictExistingBackup = (backupPath: string): void => {
   }
 };
 
+const copyPrivateBackup = async (
+  sourcePath: string,
+  backupPath: string,
+): Promise<void> => {
+  await writeFile(backupPath, await readFile(sourcePath), {
+    flag: "wx",
+    mode: 0o600,
+  });
+};
+
 export const writeAmpRegistrationBackup = async (
   settingsPath: string,
   settingsText: string,
@@ -30,6 +41,7 @@ export const writeAmpRegistrationBackup = async (
     firstBackupPath,
     settingsPath,
     settingsText,
+    { copy: copyPrivateBackup },
   );
   if (!preserved.ok) throw new Error(preserved.error.detail);
   restrictExistingBackup(preserved.value);

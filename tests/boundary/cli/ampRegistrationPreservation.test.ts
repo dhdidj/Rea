@@ -199,4 +199,6 @@ it("keeps the first Amp registration backup and secures later recovery copies", 
   expect(await readFile(backupPath, "utf8")).toBe(settingsText);
   if (process.platform !== "win32")
     expect((await stat(updatedBackupPath)).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32")
+    expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
 });

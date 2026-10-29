@@ -1,12 +1,7 @@
-import {
-  chmodSync,
-  existsSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { writeAmpRegistrationBackup } from "./cli/ampRegistrationBackup.js";
 import { registerGpuCommands } from "./cli/gpuCommands.js";
 import { registerNativeFunctionMatchingCommands } from "./cli/nativeFunctionMatchingCommands.js";
 import { registerCaptureCommands } from "./cli/captureCommands.js";
@@ -311,7 +306,10 @@ export const createCli = (
         }
         if (settingsText !== undefined) {
           try {
-            parsedSettings = JSON.parse(settingsText) as Record<string, unknown>;
+            parsedSettings = JSON.parse(settingsText) as Record<
+              string,
+              unknown
+            >;
           } catch (cause) {
             guardError = `Amp settings.json is not valid JSON: ${
               cause instanceof Error ? cause.message : String(cause)
@@ -336,10 +334,7 @@ export const createCli = (
             if (typeof entry === "object" && entry !== null)
               priorEnv = (entry as Record<string, unknown>)["env"];
             try {
-              // Backups can contain environment credentials. Restrict both
-              // new and pre-existing backups before copying the settings.
-              if (existsSync(backupPath)) chmodSync(backupPath, 0o600);
-              writeFileSync(backupPath, settingsText, { mode: 0o600 });
+              writeAmpRegistrationBackup(backupPath, settingsText);
             } catch (cause) {
               guardError = `Unable to create Amp settings backup: ${
                 cause instanceof Error ? cause.message : String(cause)

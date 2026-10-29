@@ -1,8 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect } from "vitest";
+import { expect, it } from "vitest";
 
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
+import { writeAmpRegistrationBackup } from "../../../src/cli/ampRegistrationBackup.js";
 import { cliTest } from "../../support/cli/cliFixture.js";
 
 const ampSettings = (home: string) =>
@@ -43,7 +44,6 @@ cliTest(
       null,
       2,
     );
-    const { mkdir, writeFile } = await import("node:fs/promises");
     await mkdir(join(home, ".config", "amp"), { recursive: true });
     await writeFile(settingsPath, original);
 
@@ -121,7 +121,7 @@ cliTest(
     expect(await readFile(arraySettings, "utf8")).toBe(array);
 
     // A backup write failure is reported as a filesystem problem, not as bad
-    // JSON. Tighten the mode of an existing backup path before using it.
+    // JSON.
     const backupHome = join(root, "backup-error");
     const backupSettings = ampSettings(backupHome);
     const backupPath = `${backupSettings}.rea.backup`;
@@ -140,8 +140,23 @@ cliTest(
       message: expect.stringContaining("Unable to create Amp settings backup"),
     });
     expect(backupRejected.json.message).not.toContain("not valid JSON");
-    const { stat } = await import("node:fs/promises");
-    if (process.platform !== "win32")
-      expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
   },
 );
+
+it("writes new and existing Amp registration backups with owner-only permissions", async () => {
+  const root = await createTestTempDirectory("rea-amp-backup-permissions-");
+  const backupPath = join(root, "settings.json.rea.backup");
+  const settingsText =
+    '{"amp.mcpServers":{"rea":{"env":{"TOKEN":"secret"}}}}\n';
+
+  writeAmpRegistrationBackup(backupPath, settingsText);
+  expect(await readFile(backupPath, "utf8")).toBe(settingsText);
+  if (process.platform !== "win32")
+    expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
+
+  await chmod(backupPath, 0o644);
+  writeAmpRegistrationBackup(backupPath, "updated settings");
+  expect(await readFile(backupPath, "utf8")).toBe("updated settings");
+  if (process.platform !== "win32")
+    expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
+});

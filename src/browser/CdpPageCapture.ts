@@ -96,7 +96,7 @@ export const capturePage = async (
       "URL-less scripts and console events without an allowed source URL are excluded because their origin cannot be proven.",
       ...(context.target.attached === null
         ? [
-            "CDP discovery omitted the target attachment state; attached is reported as unknown.",
+            "CDP discovery could not establish the target's debugger attachment state.",
           ]
         : []),
     ],
@@ -164,9 +164,9 @@ const captureAuthorizedPage = async (
     state.events.completeness,
   );
   const frames = frameCapture.items;
-  const captureFrame = frames[0];
+  const captureFrame = frameCapture.root;
   if (captureFrame === undefined)
-    throw new BrowserObservationError("inspect_web_page", "target_not_allowed");
+    throw new BrowserObservationError("inspect_web_page", "protocol_error");
   state.events.beginFinalCapture(captureFrame.frame_id);
   const resourceCapture = captureResources(
     await connection.send("Page.getResourceTree", {}, sessionId, signal),
@@ -294,9 +294,9 @@ const authorizeObservationWindow = async (
     allowedOrigins,
     operation: context.operation,
   });
-  const mainFrame = captureFrames(initialFrameResult, allowedOrigins).items[0];
+  const mainFrame = captureFrames(initialFrameResult, allowedOrigins).root;
   if (mainFrame === undefined)
-    throw new BrowserObservationError("inspect_web_page", "target_not_allowed");
+    throw new BrowserObservationError("inspect_web_page", "protocol_error");
   events.beginAuthorizedFrame(mainFrame.frame_id);
   await enableObservationDomains(state);
   await report(context.progress, 2, "Observing page events");

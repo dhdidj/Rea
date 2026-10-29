@@ -146,7 +146,7 @@ const immutableSpawn = (
     projectedResultBindings: candidate.projectedResultBindings,
     command,
     argvCount,
-    environmentSupplied: objectHasProperty(options, "env"),
+    environmentSupplied: environmentSupplied(options, context),
     stdioMode: stdioMode(options, candidate.method, context),
     resolution: command === null ? "partial" : "complete",
   };
@@ -403,32 +403,37 @@ const spawnArguments = (
   };
 };
 
-const objectHasProperty = (object: t.Node | undefined, name: string): boolean =>
-  t.isObjectExpression(object) &&
-  object.properties.some(
-    (property) =>
-      !t.isSpreadElement(property) &&
-      semanticStaticPropertyName(property.key, property.computed) === name,
-  );
+/**
+ * Node replaces a falsy `options.env` with a copy of the parent environment, so
+ * a nullish, empty-string, zero or `false` value passes the whole environment
+ * through instead of supplying one.
+ */
+const environmentSupplied = (
+  options: t.Node | undefined,
+  context: ChildSpawnContext,
+): boolean => {
+  const lookup = staticObjectProperty(options, "env", context.isNullish);
+  if (lookup.status !== "explicit") return false;
+  const value = unwrapJavaScriptExpression(lookup.value).node;
+  if (context.isNullish(value)) return false;
+  return staticJavaScriptTruthiness(value) !== false;
+};
 
 const stdioMode = (
   options: t.Node | undefined,
   method: JavaScriptSemanticChildProcessSpawn["method"],
   context: ChildSpawnContext,
 ): string => {
+  // Async exec/execFile do not forward options.stdio to their underlying spawn.
+  if (method === "exec" || method === "execFile") return "default";
   if (options === undefined) return "default";
   const expression = unwrapJavaScriptExpression(options).node;
-  if (
-    context.isNullish(expression) ||
-    ((method === "exec" || method === "execFile") &&
-      context.isCallback(expression))
-  )
-    return "default";
+  if (context.isNullish(expression)) return "default";
   const lookup = staticObjectProperty(expression, "stdio", context.isNullish);
   if (lookup.status === "missing")
     return unsetStdioMode(expression, method, context);
   if (lookup.status !== "explicit") return "dynamic";
-  const value = unwrapJavaScriptExpression(lookup.property.value).node;
+  const value = unwrapJavaScriptExpression(lookup.value).node;
   if (context.isNullish(value))
     return unsetStdioMode(expression, method, context);
   if (t.isStringLiteral(value)) return value.value;
@@ -452,7 +457,7 @@ const unsetStdioMode = (
   const silent = staticObjectProperty(options, "silent", context.isNullish);
   if (silent.status === "missing") return "default";
   if (silent.status !== "explicit") return "dynamic";
-  const value = unwrapJavaScriptExpression(silent.property.value).node;
+  const value = unwrapJavaScriptExpression(silent.value).node;
   if (context.isNullish(value)) return "default";
   const truthy = staticJavaScriptTruthiness(value);
   if (truthy === undefined) return "dynamic";

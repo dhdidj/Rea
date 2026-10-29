@@ -12,6 +12,26 @@ import {
   writeFixtureFiles,
 } from "../../../support/javascriptApplicationFixture.js";
 
+it("retains a candidate when table data contains harmless parameter-named keys", async () => {
+  const root = await createTestTempDirectory("rea-vite-property-keys-");
+  await writeFixtureFiles(root, {
+    "main.js": `const __vite__mapDeps = (i, m = __vite__mapDeps, d = m.f || (m.f = ["./lazy.js", {i: 0, arguments: 1}])) => i.map(n => d[n]); __vite__mapDeps([0]);`,
+    "lazy.js": "export const lazy = true;",
+  });
+  const { graph } = await reconstructJavaScriptFixture(root);
+  const candidates = graph.nodes.flatMap(({ observations }) =>
+    observations.filter(
+      ({ properties }) => properties.vite_table_candidate === true,
+    ),
+  );
+  expect(candidates).toHaveLength(1);
+  expect(candidates[0]?.properties).toMatchObject({
+    specifier: "./lazy.js",
+    candidate_path: "lazy.js",
+    resolution_status: "unavailable",
+  });
+});
+
 it("keeps Vite table candidates uncertain while direct imports still resolve", async () => {
   const root = await createTestTempDirectory("rea-vite-table-candidate-");
   await writeFixtureFiles(root, {

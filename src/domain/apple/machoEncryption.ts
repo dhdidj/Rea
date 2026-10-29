@@ -94,7 +94,11 @@ export const machoSliceEncryptionSchema = z.object({
     "absent only when every load command was read; malformed and unknown carry a reason.",
   ),
   reason: z.string().nullable(),
-  commands: z.array(machoEncryptionCommandSchema),
+  commands: z
+    .array(machoEncryptionCommandSchema)
+    .describe(
+      "Encryption load commands in table order; a slice with more than two keeps the first two and states the count in reason.",
+    ),
   range: machoEncryptedRangeSchema.nullable(),
 });
 

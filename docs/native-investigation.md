@@ -579,7 +579,11 @@ load command was read and none was an encryption command. A command whose width
 or `cmdsize` contradicts the image, more than one such command, or a range past
 the slice is `malformed`; a slice whose commands could not be fully read is
 `malformed` or `unknown` with a reason, keeping any commands seen before the
-failure. Each slice's `range` is end-exclusive in slice and input-file
+failure. A slice with more than two encryption commands keeps the first two
+and states the count in its reason. Range mapping in all slices shares one
+budget of segment and section records (16,384, a sixteenth of the native
+output budget); a slice past it keeps its status and reports its mapping as
+`unknown` with that reason. Each slice's `range` is end-exclusive in slice and input-file
 coordinates and maps to file-backed segment fragments, VM addresses and the
 overlapping nonempty sections; bytes outside every segment remain unmapped
 fragments. A segment with no VM size keeps its file bytes as fragments with

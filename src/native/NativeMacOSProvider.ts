@@ -231,6 +231,12 @@ export class NativeMacOSProvider implements AnalysisProvider {
   }
 }
 
+// Encryption range mapping in every slice shares a sixteenth of the output
+// budget at the 256 projected bytes reserved per Mach-O command record.
+const MACHO_ENCRYPTION_MAPPING_RECORDS = Math.floor(
+  NATIVE_COMMAND_OUTPUT_BUDGET_BYTES / 16 / 256,
+);
+
 class NativeMacOSClient implements AnalysisClient {
   readonly #pendingNativeUiRuntimes = new Set<NativeUiHelperRuntime>();
   readonly #pendingCommandOperations = new Set<Promise<unknown>>();
@@ -1296,6 +1302,7 @@ class NativeMacOSClient implements AnalysisClient {
                       Math.max(0, Math.min(length, source.bytes - at)),
                     ),
                   source.bytes,
+                  MACHO_ENCRYPTION_MAPPING_RECORDS,
                 ),
               resolveSlice: (selected) =>
                 resolveSelectedMachoSlice(

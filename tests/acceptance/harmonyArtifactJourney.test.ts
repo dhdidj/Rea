@@ -17,10 +17,6 @@ import {
 } from "../../src/domain/harmony/harmonyApplication.js";
 import { workspaceCliTest as test } from "../support/cli/workspaceCliFixture.js";
 
-const javascriptPaths = ["cts", "jsx", "mts", "ts", "tsx"].map(
-  (extension) => `assets/js/index.${extension}`,
-);
-
 const expectProjectionParity = (
   graph: HarmonyApplicationProjectionResult,
   cliReply: unknown,
@@ -50,7 +46,7 @@ const expectProjectionParity = (
   });
 };
 
-async function harmonyArchive() {
+const harmonyFixture = async () => {
   const writer = new ZipWriter(new Uint8ArrayWriter());
   await writer.add(
     "module.json",
@@ -60,18 +56,24 @@ async function harmonyArchive() {
     "ets/modules.abc",
     new TextReader("opaque bytecode fixture"),
   );
+  await writer.add("ets/current", new TextReader("modules.abc"), {
+    unixMode: 0o120777,
+  });
   await writer.add("pkgContextInfo.json", new TextReader("{}"));
   await writer.add(".pages.info", new TextReader("page metadata fixture"));
+  const javascriptPaths = ["cts", "jsx", "mts", "ts", "tsx"].map(
+    (extension) => `assets/js/index.${extension}`,
+  );
   for (const path of javascriptPaths)
     await writer.add(path, new TextReader("export const value = 1;"));
-  return writer.close();
-}
+  return { bytes: await writer.close(), javascriptPaths };
+};
 
 test("preserves Harmony archive formats through the public CLI/MCP lifecycle", async ({
   cli,
   workspace,
 }) => {
-  const bytes = await harmonyArchive();
+  const { bytes, javascriptPaths } = await harmonyFixture();
   const environment = {
     PATH: process.env.PATH ?? "",
     HOME: workspace.root,
@@ -108,6 +110,14 @@ test("preserves Harmony archive formats through the public CLI/MCP lifecycle", a
       const cliEvidence = parseEvidence(cliReply.json);
       const cliInventory = artifactInspectionResultSchema.parse(
         cliEvidence.normalized_result,
+      );
+      expect(
+        cliInventory.substeps[0]?.evidence.normalized_result.occurrences,
+      ).toContainEqual(
+        expect.objectContaining({
+          logical_path: "ets/current",
+          entry_kind: "symlink",
+        }),
       );
       expect(cliInventory.subject).toMatchObject({
         root_format: format,
@@ -153,6 +163,7 @@ test("preserves Harmony archive formats through the public CLI/MCP lifecycle", a
         root_format: format,
         root_sha256: sha256,
         coverage: { status: "complete-within-inventory" },
+        unavailable_components: [],
         unclassified_components: [
           expect.objectContaining({
             path: ".pages.info",

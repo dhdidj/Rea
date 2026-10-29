@@ -18,6 +18,7 @@ import { err, ok, type Result } from "../domain/result.js";
 import { ConfigurationError } from "../domain/configurationErrors.js";
 import { copyFile, lstat, realpath, rm, rmdir } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { homeDirectoryFromEnvironment } from "../config/homeDirectory.js";
 import { basename, dirname } from "node:path";
 import {
@@ -591,15 +592,15 @@ export const systemUninstallHost = (
             effectiveClientConfiguration(remainingLayers)?.servers[
               PRODUCT_IDENTITY.mcpServerKey
             ];
-          if (
-            clientRegistrationOwnership(selected, client) === "owned" &&
-            remaining !== undefined &&
-            clientRegistrationOwnership(remaining, client) !== "owned"
-          )
+          const altersEffectiveRegistration =
+            clientRegistrationOwnership(selected, client) === "owned"
+              ? remaining !== undefined
+              : !isDeepStrictEqual(selected, remaining);
+          if (altersEffectiveRegistration)
             return item(
               client.name,
               "failed",
-              "Removing REA's registration would activate an unowned OpenCode registration in another configuration layer, including a possible V1 fallback; no change was made. Remove or replace that registration manually, then rerun uninstall.",
+              "Removing REA's registration would activate or change an unowned OpenCode registration in another configuration layer, including a possible V1 fallback; no change was made. Remove or replace that registration manually, then rerun uninstall.",
             );
         }
         if (

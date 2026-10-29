@@ -7,6 +7,63 @@ import {
   systemUninstallHost,
 } from "../../../src/application/Uninstall.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
+import { effectiveClientConfiguration } from "../../../src/application/ClientConfigurationFiles.js";
+import { parseClientConfiguration } from "../../../src/application/ClientConfigurationDocument.js";
+
+it("retains an owned lower layer when a foreign upper layer inherits its fields", async () => {
+  const home = await createTestTempDirectory("rea-opencode-layered-foreign-");
+  const directory = join(home, ".config/opencode");
+  await mkdir(directory, { recursive: true });
+  const lower = join(directory, "opencode.json");
+  const upper = join(directory, "opencode.jsonc");
+  const owned = JSON.stringify({
+    mcp: {
+      servers: {
+        rea: { type: "local", command: ["rea", "mcp"], disabled: false },
+      },
+    },
+  });
+  const partial = JSON.stringify({
+    mcp: { servers: { rea: { command: ["/usr/bin/false"] } } },
+  });
+  await writeFile(lower, owned);
+  await writeFile(upper, partial);
+  const effective = async () =>
+    effectiveClientConfiguration(
+      await Promise.all(
+        [lower, upper].map(async (sourcePath) => ({
+          ...parseClientConfiguration(
+            await readFile(sourcePath, "utf8"),
+            "opencode",
+          ),
+          sourcePath,
+        })),
+      ),
+    )?.servers.rea;
+  const before = await effective();
+  expect(before).toMatchObject({
+    type: "local",
+    command: ["/usr/bin/false"],
+    disabled: false,
+  });
+  const result = await runUninstall(
+    false,
+    systemUninstallHost(home, undefined, {
+      XDG_CONFIG_HOME: join(home, ".config"),
+    }),
+  );
+  expect(result.status).toBe("failed");
+  expect(result.items).toContainEqual(
+    expect.objectContaining({
+      name: "opencode",
+      status: "failed",
+      detail: expect.stringContaining("change an unowned"),
+    }),
+  );
+  expect(await readFile(lower, "utf8")).toBe(owned);
+  expect(await readFile(upper, "utf8")).toBe(partial);
+  expect(await effective()).toEqual(before);
+});
 
 it("preflights a foreign legacy registration across OpenCode layers before removal", async () => {
   const home = await createTestTempDirectory("rea-opencode-layered-uninstall-");

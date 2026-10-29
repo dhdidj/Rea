@@ -64,6 +64,10 @@ const matchTiers = (): readonly MatchTier[] => [
     key: sourceMapKey,
   },
   {
+    match: { basis: "source-map-identity", confidence: "high" },
+    key: sourceMapOccurrenceKey,
+  },
+  {
     match: { basis: "structural-fingerprint", confidence: "medium" },
     key: structuralFingerprintKey,
   },
@@ -109,6 +113,26 @@ export const matchJavaScriptApplicationVersions = (
     candidatesForLeft: sortedCandidates(leftCandidates),
     candidatesForRight: sortedCandidates(rightCandidates),
   };
+};
+
+/** A URL suffix is not a local path; scope the exact declaration to its map occurrence. */
+const sourceMapOccurrenceKey = (node: ApplicationNode): string | null => {
+  if (
+    node.kind !== "source-module" ||
+    node.identity.strategy !== "source-map-original"
+  )
+    return null;
+  const mapPaths = new Set<string>();
+  for (const { source_map_reference: reference } of node.observations) {
+    if (reference?.resolution.kind !== "suffix") return null;
+    mapPaths.add(reference.map_path);
+  }
+  if (mapPaths.size !== 1) return null;
+  return `source-map-occurrence\0${canonicalJson([
+    [...mapPaths][0],
+    node.identity.source_root,
+    node.identity.original_source,
+  ])}`;
 };
 
 interface AmbiguousGroup {

@@ -352,6 +352,11 @@ The tiers are exact content digest, exact module-source digest, exact node
 identity, source-map identity, structural fingerprint, and a semantic key for
 non-module entities. Lower tiers never override a higher unique match.
 
+Source-map matching uses a unique artifact-relative source path when available.
+For URL-backed declarations, it can instead match the exact source name and
+root within a uniquely identified map path; this does not resolve the URL to a
+local file. Multiple map paths or duplicate candidates remain ambiguous.
+
 Module ordinals, stable minified names, and fuzzy text similarity are not
 persistent identities. Duplicate candidates remain ambiguous. Source-map and
 structural matches are high/medium-confidence inferences rather than exact

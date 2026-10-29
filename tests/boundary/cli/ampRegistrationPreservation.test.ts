@@ -54,14 +54,14 @@ cliTest(
       command: expect.any(String),
       env: { KEEP_ME: "1" },
     });
-    // A successful registration removes the backup it took.
-    await expect(
-      readFile(`${settingsPath}.rea.backup`, "utf8"),
-    ).rejects.toThrow();
+    const registrationBackupPath = `${settingsPath}.rea.backup`;
+    expect(await readFile(registrationBackupPath, "utf8")).toBe(original);
+    expect(refreshed.stderr).toContain(registrationBackupPath);
     expect(after.theme).toBe("dark");
 
     // The equals form --agent=amp is parsed as a spaced form before Incur sees
     // it, so the Amp registration lands and keeps the environment map.
+    const settingsBeforeEquals = await readFile(settingsPath, "utf8");
     const equals = await run(["mcp", "add", "--agent=amp"]);
     expect(equals.exitCode, equals.stderr).toBe(0);
     const afterEquals = JSON.parse(await readFile(settingsPath, "utf8"));
@@ -69,6 +69,16 @@ cliTest(
       command: expect.any(String),
       env: { KEEP_ME: "1" },
     });
+    expect(await readFile(registrationBackupPath, "utf8")).toBe(original);
+    const recoveryBackupPath = equals.stderr.match(
+      /Amp MCP registration backup retained at (.+)/,
+    )?.[1];
+    expect(recoveryBackupPath).toContain(".recovery");
+    if (recoveryBackupPath === undefined)
+      throw new Error("Amp did not report the current recovery backup path.");
+    expect(await readFile(recoveryBackupPath, "utf8")).toBe(
+      settingsBeforeEquals,
+    );
 
     // A malformed settings file is rejected instead of reporting success.
     const broken = join(root, "broken");
@@ -94,6 +104,25 @@ cliTest(
       ]),
     });
     expect(await readFile(brokenSettings, "utf8")).toBe(malformed);
+
+    // JSON null is valid JSON but not a settings object; reject it as a
+    // validation error instead of letting property access throw.
+    const nullHome = join(root, "null-settings");
+    const nullSettings = ampSettings(nullHome);
+    await mkdir(join(nullHome, ".config", "amp"), { recursive: true });
+    await writeFile(nullSettings, "null\n");
+    const nullRejected = await cli.run({
+      arguments: ["mcp", "add", "--agent", "amp", "--json"],
+      cwd: root,
+      environment: { HOME: nullHome, USERPROFILE: nullHome },
+      timeoutMs: 20_000,
+    });
+    expect(nullRejected.exitCode, nullRejected.stderr).toBe(1);
+    expect(nullRejected.json).toMatchObject({
+      code: "VALIDATION_ERROR",
+      message: expect.stringContaining("must contain a JSON object"),
+    });
+    expect(await readFile(nullSettings, "utf8")).toBe("null\n");
 
     // An array-valued amp.mcpServers is rejected instead of claiming success.
     const arrayHome = join(root, "array");
@@ -143,20 +172,31 @@ cliTest(
   },
 );
 
-it("writes new and existing Amp registration backups with owner-only permissions", async () => {
+it("keeps the first Amp registration backup and secures later recovery copies", async () => {
   const root = await createTestTempDirectory("rea-amp-backup-permissions-");
-  const backupPath = join(root, "settings.json.rea.backup");
+  const settingsPath = join(root, "settings.json");
   const settingsText =
     '{"amp.mcpServers":{"rea":{"env":{"TOKEN":"secret"}}}}\n';
+  await writeFile(settingsPath, settingsText);
 
-  writeAmpRegistrationBackup(backupPath, settingsText);
+  const backupPath = await writeAmpRegistrationBackup(
+    settingsPath,
+    settingsText,
+  );
   expect(await readFile(backupPath, "utf8")).toBe(settingsText);
   if (process.platform !== "win32")
     expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
 
   await chmod(backupPath, 0o644);
-  writeAmpRegistrationBackup(backupPath, "updated settings");
-  expect(await readFile(backupPath, "utf8")).toBe("updated settings");
+  const updatedSettings = "updated settings";
+  await writeFile(settingsPath, updatedSettings);
+  const updatedBackupPath = await writeAmpRegistrationBackup(
+    settingsPath,
+    updatedSettings,
+  );
+  expect(updatedBackupPath).not.toBe(backupPath);
+  expect(await readFile(updatedBackupPath, "utf8")).toBe(updatedSettings);
+  expect(await readFile(backupPath, "utf8")).toBe(settingsText);
   if (process.platform !== "win32")
-    expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
+    expect((await stat(updatedBackupPath)).mode & 0o777).toBe(0o600);
 });

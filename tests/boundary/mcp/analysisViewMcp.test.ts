@@ -442,10 +442,13 @@ it.each(["full", "compact"] as const)(
     expect(schemas.ajv.validate(schemas.inputSchema, input)).toBe(true);
     const outputs = [];
     for (const source of [input.source, { kind: "inline", evidence: parent }]) {
-      const response = await client.callTool({
-        name: "inspect_analysis_view",
-        arguments: { ...input, source },
-      });
+      const response = await client.callTool(
+        {
+          name: "inspect_analysis_view",
+          arguments: { ...input, source },
+        },
+        { toolDefinition: schemas.toolDefinition },
+      );
       expect(response.isError).not.toBe(true);
       expect(
         schemas.ajv.validate(schemas.outputSchema, response.structuredContent),

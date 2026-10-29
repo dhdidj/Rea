@@ -258,3 +258,98 @@ it("does not restore omitted defaulted columns and admits historical unknown IL 
   expect(calls.rows[0]).not.toHaveProperty("target_identity_sha256");
   expect(calls.rows[0]).not.toHaveProperty("target_declaring_type");
 });
+
+it("filters relationship endpoints from recorded facts rather than caller display text", () => {
+  const report = methodFacts();
+  const method = report.methods[0];
+  if (method === undefined) throw new Error("Method fixture is missing");
+  report.call_edges = [
+    {
+      caller_token: "0x06000001",
+      il_offset: 0,
+      target_identity_sha256: null,
+      caller: "Unrelated.Caller",
+      opcode: "call",
+      target_token: "0x0a000001",
+      target_kind: "member-ref",
+      target_name: "Target",
+      target_declaring_type: "Exact.Type",
+    },
+    {
+      caller_token: "0x06000002",
+      il_offset: 0,
+      target_identity_sha256: null,
+      caller: "Exact.Type.Target",
+      opcode: "call",
+      target_token: "0x0a000002",
+      target_kind: "member-ref",
+      target_name: "Other",
+      target_declaring_type: "Other.Type",
+    },
+  ];
+  report.field_accesses = [
+    {
+      method_token: "0x06000001",
+      il_offset: 0,
+      target_identity_sha256: null,
+      method: "Unrelated.Caller",
+      opcode: "ldfld",
+      field_token: "0x04000001",
+      field_name: "Target",
+      field_declaring_type: "Exact.Type",
+    },
+    {
+      method_token: "0x06000002",
+      il_offset: 0,
+      target_identity_sha256: null,
+      method: "Exact.Type.Target",
+      opcode: "ldfld",
+      field_token: "0x04000002",
+      field_name: "Other",
+      field_declaring_type: "Other.Type",
+    },
+  ];
+  report.member_refs = [
+    {
+      token: "0x0a000001",
+      row_offset: 256,
+      parent_token: "0x01000001",
+      parent_name: "Exact.Type",
+      name: "Target",
+      signature: method.signature,
+    },
+    {
+      token: "0x0a000002",
+      row_offset: 272,
+      parent_token: "0x01000002",
+      parent_name: "Other.Type",
+      name: "Target",
+      signature: method.signature,
+    },
+  ];
+  for (const collection of [
+    "call_edges",
+    "field_accesses",
+    "member_refs",
+  ] as const) {
+    const result = projectManagedMemberView(
+      parent(report),
+      managedMembersViewRequestSchema.parse({
+        kind: "managed-members",
+        collection,
+        names: ["Target"],
+        declaring_types: ["Exact.Type"],
+        fields: [],
+      }),
+    );
+    if (!result.ok) throw result.error;
+    expect(result.value).toMatchObject({
+      coverage: { total: 1 },
+      page: {
+        source_count: 2,
+        unresolved_filter_rows: 0,
+        rows: [{ source_index: 0 }],
+      },
+    });
+  }
+});

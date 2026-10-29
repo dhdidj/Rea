@@ -92,6 +92,8 @@ export const managedMembersViewRequestSchema = z.discriminatedUnion(
   ],
 );
 
+// Filtered/projected rows always carry this coordinate. Historical unfiltered
+// pages keep their original full-row shape without it.
 const sourceIndex = { source_index: z.int().nonnegative().exactOptional() };
 const rowsOf = <C extends string, S extends z.ZodObject>(
   collection: C,

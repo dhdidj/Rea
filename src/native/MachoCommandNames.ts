@@ -114,11 +114,22 @@ export class MachoBinaryFormatError extends Error {}
 export class MachoCommandNamesLimitError extends Error {
   constructor(
     readonly maximum: number,
-    readonly unit: "bytes" | "records",
+    readonly unit: "bytes" | "records" | "projected_bytes",
   ) {
-    super(`Mach-O load-command ${unit} exceed the retained output budget`);
+    super(
+      `Mach-O load-command ${unit === "projected_bytes" ? "projected bytes" : unit} exceed the retained output budget`,
+    );
   }
 }
+
+// A section becomes both a segment-view object and a set of indexed command
+// fields. Reserve for their keys, numbers, identities and JSON framing before
+// retaining the section. Strings are charged separately for escaping and hex.
+const PROJECTED_COMMAND_BYTES = 2048;
+const PROJECTED_SECTION_BYTES = 2048;
+const PROJECTED_CHILD_BYTES = 256;
+const PROJECTED_STRING_EXPANSION = 24;
+const DEFAULT_PROJECTED_BYTES = 64 * 1024 * 1024;
 
 export interface MachoCommandNames {
   readonly sliceSize: number;
@@ -226,12 +237,15 @@ export const readMachoCommandNames = async (
   imageSize: number,
   maximumStringBytes: number,
   maximumRecords: number,
+  maximumProjectedBytes = DEFAULT_PROJECTED_BYTES,
 ): Promise<MachoCommandNames> => {
   if (
     !Number.isSafeInteger(maximumStringBytes) ||
     maximumStringBytes < 0 ||
     !Number.isSafeInteger(maximumRecords) ||
-    maximumRecords < 0
+    maximumRecords < 0 ||
+    !Number.isSafeInteger(maximumProjectedBytes) ||
+    maximumProjectedBytes < 0
   )
     throw new TypeError("Mach-O read limits must be nonnegative safe integers");
   const exact = async (offset: number, size: number): Promise<Uint8Array> => {
@@ -257,11 +271,22 @@ export const readMachoCommandNames = async (
   const cursor = new MachoLoadCommandCursor(table);
   if (table.commandCount > maximumRecords)
     throw new MachoCommandNamesLimitError(maximumRecords, "records");
+  let projectedBytes = 0;
+  const chargeProjection = (count: number, perItem: number): void => {
+    if (count > Math.floor((maximumProjectedBytes - projectedBytes) / perItem))
+      throw new MachoCommandNamesLimitError(
+        maximumProjectedBytes,
+        "projected_bytes",
+      );
+    projectedBytes += count * perItem;
+  };
+  chargeProjection(table.commandCount, PROJECTED_COMMAND_BYTES);
   let records = table.commandCount;
   let retainedStringBytes = 0;
   const retain = (bytes: Uint8Array): Uint8Array => {
     if (bytes.byteLength > maximumStringBytes - retainedStringBytes)
       throw new MachoCommandNamesLimitError(maximumStringBytes, "bytes");
+    chargeProjection(bytes.byteLength, PROJECTED_STRING_EXPANSION);
     retainedStringBytes += bytes.byteLength;
     return bytes;
   };
@@ -320,6 +345,7 @@ export const readMachoCommandNames = async (
         throw new MachoBinaryFormatError("Mach-O section table is truncated");
       if (segment.value.sectionCount > maximumRecords - records)
         throw new MachoCommandNamesLimitError(maximumRecords, "records");
+      chargeProjection(segment.value.sectionCount, PROJECTED_SECTION_BYTES);
       records += segment.value.sectionCount;
       segmentName = retain(segment.value.nameBytes);
       const segmentView = new DataView(
@@ -528,6 +554,7 @@ export const readMachoCommandNames = async (
         throw new MachoBinaryFormatError(
           "Mach-O linker option table is truncated",
         );
+      chargeProjection(count, PROJECTED_CHILD_BYTES);
       records += count;
       linkerOptions = [];
       let offset = 12;
@@ -655,6 +682,7 @@ export const readMachoCommandNames = async (
         );
       if (toolCount > maximumRecords - records)
         throw new MachoCommandNamesLimitError(maximumRecords, "records");
+      chargeProjection(toolCount, PROJECTED_CHILD_BYTES);
       records += toolCount;
       const tools: { tool: number; version: number }[] = [];
       for (let i = 0; i < toolCount; i++) {

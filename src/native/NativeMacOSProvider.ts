@@ -246,8 +246,7 @@ class NativeMacOSClient implements AnalysisClient {
     private readonly tracer: NativeCallTracer,
     private readonly environment: Readonly<NodeJS.ProcessEnv>,
     private readonly privateRuntimeRootFactory:
-      | SignatureRuntimeRootFactory
-      | undefined,
+      SignatureRuntimeRootFactory | undefined,
     private readonly bundleResourceRoot?: ResolvedAppBundleResourceRoot,
     private readonly bundlePlistAvailable = true,
   ) {}
@@ -1304,6 +1303,7 @@ class NativeMacOSClient implements AnalysisClient {
                   length,
                   maximum,
                   maximumRecords,
+                  NATIVE_COMMAND_OUTPUT_BUDGET_BYTES,
                 );
                 if (size !== null) {
                   if (selected === undefined)
@@ -1329,8 +1329,7 @@ class NativeMacOSClient implements AnalysisClient {
       readonly timeoutMs: number;
       readonly acceptNonZero?: boolean;
       readonly acceptNonZeroIf?:
-        | ((capture: NativeCommandCapture) => boolean)
-        | undefined;
+        ((capture: NativeCommandCapture) => boolean) | undefined;
     },
   ): Promise<Result<NativeCommandCapture, AnalysisError>> {
     // Commands borrow their enclosing operation's admission through finalization.

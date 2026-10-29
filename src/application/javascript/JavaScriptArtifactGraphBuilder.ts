@@ -199,10 +199,17 @@ function* buildJavaScriptArtifactGraphInputSteps(
   const findingLimitations =
     yield* addJavaScriptStaticFindingsSteps(projectionContext);
   const coverage = graphCoverage(context);
+  // Partial graph coverage may reflect an unrelated dynamic expression or
+  // source map. Only omitted JavaScript projections introduce additional
+  // unknown IPC records beyond the existing application-owner checks.
   const ipc = createElectronIpcContext(
     projectionContext.analysis,
     (file) => applicationRootPath(projectionContext, file),
-    coverage.status === "complete",
+    !analysis.files.some(
+      ({ file, application_projection_failure }) =>
+        file.kind === "javascript" &&
+        application_projection_failure !== undefined,
+    ),
   );
   addElectronBoundaries(projectionContext, ipc);
   yield;

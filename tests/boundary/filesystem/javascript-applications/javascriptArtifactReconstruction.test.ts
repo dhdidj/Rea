@@ -384,6 +384,36 @@ it("keeps imported loadFile ownership unknown across an application projection o
   }
 });
 
+it("keeps known IPC pairings when a different Electron value is dynamic", async () => {
+  const root = await createTestTempDirectory("rea-partial-ipc-");
+  await writeFixtureFiles(root, {
+    "package.json": JSON.stringify({ main: "main.js" }),
+    "main.js":
+      'const { BrowserWindow, ipcMain } = require("electron"); new BrowserWindow({ webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true } }); ipcMain.handle("rea:ping", () => true);',
+    "preload.js":
+      'const { contextBridge, ipcRenderer } = require("electron"); contextBridge.exposeInMainWorld("rea", { ping: () => ipcRenderer.invoke("rea:ping") });',
+  });
+  const snapshot = await scanCanonicalArtifactInventory(root, {});
+  const reader = createJavaScriptArtifactReader(root, "directory");
+  try {
+    const files = await readJavaScriptArtifactFiles(reader, snapshot);
+    const { analysis } = await analyzeArtifactFiles(files);
+    expect(
+      analysis.files.find(({ file }) => file.path === "main.js")?.javascript,
+    ).toMatchObject({ parse_status: "partial", parse_error_count: 0 });
+    const { graph, electronSummary } = await completeJavaScriptAnalysisSteps(
+      buildImmutableJavaScriptArtifactGraphSteps(snapshot, files, analysis),
+    );
+    expect(graph.coverage.status).toBe("partial");
+    expect(electronSummary.ipc).toMatchObject({
+      paired_renderer_transmissions: 1,
+      ambiguous_renderer_transmissions: 0,
+    });
+  } finally {
+    await reader.close();
+  }
+});
+
 it("does not expand or pair IPC from a revoked application projection", async () => {
   const root = await createTestTempDirectory("rea-revoked-ipc-");
   await writeFixtureFiles(root, {

@@ -10,6 +10,27 @@ const candidates = (source: string) =>
     .map(({ specifier }) => specifier);
 
 describe("Vite inherited dependency values", () => {
+  it("invalidates caches when an intrinsic prototype escapes directly or through an alias", () => {
+    for (const effect of [
+      `opaque(Array.prototype);`,
+      `const p=Array.prototype; opaque(p);`,
+      `const box={x:Array.prototype}; opaque(box);`,
+      `const box={}; Object.setPrototypeOf(box, Array.prototype); opaque(box);`,
+      `Object.setPrototypeOf(external, Array.prototype);`,
+    ]) {
+      expect(candidates(effect + ` __vite__mapDeps([0]);`)).toEqual([null]);
+    }
+    const source = helper + `opaque(Array.prototype); __vite__mapDeps([0]);`;
+    expect(
+      Array.from(
+        runInNewContext(source, {
+          opaque: (value: { map: () => string[] }) => {
+            value.map = () => ["./last.js"];
+          },
+        }),
+      ),
+    ).toEqual(["./last.js"]);
+  });
   it("keeps unrelated direct intrinsic writes and prototype assignments precise", () => {
     expect(
       candidates(`Array.prototype[2] = 1; __vite__mapDeps([,0]);`),

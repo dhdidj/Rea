@@ -11,7 +11,10 @@ import {
   type JavaScriptIntrinsicInvocation,
 } from "./javascriptElectronMemberWrites.js";
 import { createSemanticModuleInterop } from "./javascriptModuleInterop.js";
-import type { JavaScriptSemanticAnalysisState } from "./javascriptSemanticState.js";
+import {
+  resolveSemanticBindingState,
+  type JavaScriptSemanticAnalysisState,
+} from "./javascriptSemanticState.js";
 import { traverseJavaScriptValueAstSteps } from "./javascriptSemanticTraversal.js";
 import { semanticArrayIndex } from "./javascriptSemanticPropertyPaths.js";
 import {
@@ -173,7 +176,12 @@ export function* invalidateJavaScriptViteCachesSteps(
     {
       const identity = identities.read(escape.value);
       invalidate(identity?.owner);
-      if (identity?.inheritedArrayPrototype === true) invalidate(null);
+      if (
+        identity?.inheritedArrayPrototype === true ||
+        (identity?.intrinsicPrototype === true &&
+          !localPrototypeOperation(escape, context))
+      )
+        invalidate(null);
     }
   }
   yield* retainImplicitReceiverEffectsSteps(program, context, invalidate);
@@ -203,7 +211,11 @@ export function* invalidateJavaScriptViteCachesSteps(
     ) {
       const identity = identities.read(write.value);
       invalidate(identity?.owner);
-      if (identity?.inheritedArrayPrototype === true) invalidate(null);
+      if (
+        identity?.inheritedArrayPrototype === true ||
+        identity?.intrinsicPrototype === true
+      )
+        invalidate(null);
     }
   }
   if (
@@ -221,6 +233,54 @@ export function* invalidateJavaScriptViteCachesSteps(
 type Interop = ReturnType<typeof createSemanticModuleInterop>;
 
 /** retain value exposure separately from known receiver mutation semantics. */
+/** These intrinsic operations do not expose a proven ordinary receiver. */
+const localPrototypeOperation = (
+  escape: CacheExposure,
+  context: CacheEffectContext,
+): boolean => {
+  const node = escape.node;
+  if (!t.isCallExpression(node) && !t.isOptionalCallExpression(node))
+    return false;
+  const invocation = context.interop.intrinsicInvocation(node);
+  if (invocation?.kind !== "known") return false;
+  const path = invocation.path.join(".");
+  const directTarget = invocation.arguments?.[0];
+  if (
+    [
+      "intrinsic.Object.defineProperty",
+      "intrinsic.Reflect.defineProperty",
+      "intrinsic.Object.defineProperties",
+    ].includes(path) &&
+    directTarget === escape.value &&
+    t.isMemberExpression(directTarget) &&
+    t.isIdentifier(directTarget.object) &&
+    ["Array", "Object"].includes(directTarget.object.name) &&
+    semanticStaticPropertyKey(directTarget.property, directTarget.computed) ===
+      "prototype" &&
+    resolveSemanticBindingState(
+      context.state,
+      directTarget.object,
+      directTarget.object.name,
+    ) === undefined
+  )
+    return true;
+  if (
+    ![
+      "intrinsic.Object.getPrototypeOf",
+      "intrinsic.Reflect.getPrototypeOf",
+      "intrinsic.Object.setPrototypeOf",
+      "intrinsic.Reflect.setPrototypeOf",
+    ].includes(path)
+  )
+    return false;
+  const target = invocation.arguments?.[0];
+  return (
+    target !== undefined &&
+    !t.isSpreadElement(target) &&
+    context.identities.read(target)?.allocation?.kind === "container"
+  );
+};
+
 function* indexCallExposuresSteps(
   calls: readonly Call[],
   context: CacheEffectContext,
@@ -471,8 +531,14 @@ function* retainObjectWritesSteps(
       path === "intrinsic.Reflect.setPrototypeOf"
     ) {
       const target = invocation.arguments?.[0];
+      const value = invocation.arguments?.[1];
       if (t.isExpression(target))
-        writes.push({ node: call, receiver: target, key: "__proto__" });
+        writes.push({
+          node: call,
+          receiver: target,
+          key: "__proto__",
+          ...(t.isExpression(value) ? { value } : {}),
+        });
       continue;
     }
     if (
@@ -850,7 +916,11 @@ function* retainCallEffectsSteps(
     ) {
       const identity = identities.read(direct.receiver);
       invalidate(identity?.owner);
-      if (identity?.inheritedArrayPrototype === true) invalidate(null);
+      if (
+        identity?.inheritedArrayPrototype === true ||
+        identity?.intrinsicPrototype === true
+      )
+        invalidate(null);
     }
   }
   if (!arrayInvocation(invocation) || invocation?.receiver === undefined)
@@ -873,7 +943,11 @@ function* retainCallEffectsSteps(
     ))
   ) {
     invalidate(receiver?.owner);
-    if (receiver?.inheritedArrayPrototype === true) invalidate(null);
+    if (
+      receiver?.inheritedArrayPrototype === true ||
+      receiver?.intrinsicPrototype === true
+    )
+      invalidate(null);
   }
 }
 

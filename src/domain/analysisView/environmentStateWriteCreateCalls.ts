@@ -298,6 +298,8 @@ interface FieldCalls {
   readonly exemplar: JsonObject;
   readonly later: { readonly entity: JsonObject; readonly body: JsonObject };
   readonly sentBefore: ReadonlySet<string>;
+  /** Members an earlier call left out and the application stored a fixed value for (`body.defaults`). */
+  readonly defaulted: ReadonlySet<string>;
   readonly required: readonly string[];
   readonly earlier: EarlierEvidence;
 }
@@ -348,8 +350,11 @@ const sentOrNumbered = (
   agree: (held: FieldRule) => FieldRule | undefined,
 ): FieldRule | undefined => {
   const laterSent = Object.hasOwn(calls.later.body, field);
+  // An earlier call that left the member out stored a fixed value, so the application does not number it.
   if (before.rule === "echo")
-    return after.rule === "sequence" && !laterSent
+    return after.rule === "sequence" &&
+      !laterSent &&
+      !calls.defaulted.has(field)
       ? { ...after, sent: true }
       : undefined;
   if (before.rule !== "sequence") return undefined;
@@ -455,6 +460,9 @@ export const mergedCreatePlan = (
       exemplar,
       later,
       sentBefore,
+      defaulted: new Set(
+        (plan.body.defaults ?? []).map(({ member }) => member),
+      ),
       required: plan.body.required,
       earlier,
     });

@@ -6,7 +6,10 @@ import {
 } from "../../../tests/fixtures/analysisView.js";
 import {
   CLEARED_THEN_OMITTED_KEPT_ROWS,
+  DEFAULT_THEN_NUMBERED_ROWS,
   DONE_CLOCK_ROWS,
+  DONE_MICRO_ROWS,
+  OWNER_NAMED_THEN_CLEARED_ROWS,
   DONE_MIXED_ROWS,
   DONE_ZONE_ROWS,
   OMITTED_KEPT_THEN_CLEARED_ROWS,
@@ -73,6 +76,32 @@ describe("writes whose calls send different members", () => {
       });
     },
   );
+
+  it("serves no create numbered when left out after a call that left it out stored a fixed value", () => {
+    const plan = planOf(DEFAULT_THEN_NUMBERED_ROWS, "post_bundles");
+    expect(plan.rules).not.toContainEqual(
+      expect.objectContaining({ field: "order", rule: "sequence" }),
+    );
+    expect(plan).toMatchObject({ served: false });
+  });
+
+  it("confirms an update whose read shows the clock it stamped to the microsecond", () => {
+    expect(planOf(DONE_MICRO_ROWS, "patch_tasks_by_id")).toMatchObject({
+      served: true,
+    });
+  });
+
+  it("serves a PUT that names a reference by its member and one that leaves it out and clears it", () => {
+    const plan = planOf(OWNER_NAMED_THEN_CLEARED_ROWS, "put_tags_by_id");
+    expect(plan).toMatchObject({ served: true });
+    expect(plan.rules).toContainEqual(
+      expect.objectContaining({
+        field: "owner",
+        rule: "reference",
+        member: "ownerId",
+      }),
+    );
+  });
 
   it("confirms an update whose read shows the clock it stamped to the second", () => {
     expect(planOf(DONE_CLOCK_ROWS, "patch_tasks_by_id")).toMatchObject({

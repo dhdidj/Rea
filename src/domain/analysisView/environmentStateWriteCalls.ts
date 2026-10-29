@@ -335,23 +335,33 @@ export const defaultsDisagree = (
     readonly sent?: JsonObject;
     readonly after?: JsonObject;
   },
-): boolean =>
-  (defaults ?? []).some(
+  rules: readonly FieldRule[],
+): boolean => {
+  // A call that named a reference's entity by its member supplied the field.
+  const sources = new Map(
+    rules.flatMap((rule) =>
+      rule.rule === "reference" ? [[rule.field, rule.member] as const] : [],
+    ),
+  );
+  const supplied = (sent: (member: string) => boolean, member: string) =>
+    sent(member) || (sources.has(member) && sent(sources.get(member)!));
+  return (defaults ?? []).some(
     ({ member, value }) =>
       calls.earlier.some((call) => {
         const stored = call.shown.get(member) ?? call.read.get(member);
         return (
-          !call.sentMembers.has(member) &&
+          !supplied((name) => call.sentMembers.has(name), member) &&
           stored !== undefined &&
           !same(stored, observedValue(value))
         );
       }) ||
       (calls.sent !== undefined &&
         calls.after !== undefined &&
-        !Object.hasOwn(calls.sent, member) &&
+        !supplied((name) => Object.hasOwn(calls.sent!, name), member) &&
         Object.hasOwn(calls.after, member) &&
         !same(calls.after[member], value)),
   );
+};
 
 /** Keep what a modelled update call showed, which later calls' rules must reproduce, and the fields it found already set. */
 export const rememberCall = (

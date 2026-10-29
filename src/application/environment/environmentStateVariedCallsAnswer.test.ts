@@ -4,6 +4,7 @@ import {
   DONE_CLOCK_ROWS,
   FEWER_MEMBERS_ROWS,
   NUMBERED_UNLESS_SENT_ROWS,
+  OWNER_NAMED_THEN_CLEARED_ROWS,
   PUT_CLEARS_ROWS,
 } from "../../../tests/fixtures/environmentStateVariedCalls.js";
 import { servedFrom } from "../../../tests/fixtures/environmentStateServing.js";
@@ -58,6 +59,20 @@ describe("served writes whose calls send different members", () => {
       name: "Mail",
       owner: 3,
     });
+  });
+
+  it("clears a referenced owner a PUT leaves out, and stores the one a PUT names by its id", () => {
+    const tags = servedFrom(OWNER_NAMED_THEN_CLEARED_ROWS);
+    expect(
+      tags.answer("put_tags_by_id", { id: "1", body: { name: "Receipts" } })
+        .body,
+    ).toMatchObject({ name: "Receipts", owner: null });
+    expect(
+      tags.answer("put_tags_by_id", {
+        id: "2",
+        body: { name: "Mail", ownerId: 4 },
+      }).body,
+    ).toMatchObject({ name: "Mail", owner: { id: 4, name: "Bo" } });
   });
 
   it("answers an update with its clock spelled as the recorded answer and stores it as reads spell it", () => {

@@ -800,7 +800,8 @@ request stamped, in the rule's format. Members either call sent are accepted, on
 required, and an echoed member a call left out takes the value that call stored
 (`body.defaults`). A member one call sent and stored as sent, and another left
 out and the application numbered one past the others, takes the value a call
-sends, else that number (a `sequence` with `sent`), whichever call came first;
+sends, else that number (a `sequence` with `sent`), whichever call came first,
+unless a call that left it out stored a fixed value (its `body.defaults`);
 a later call that sends it must have stored what it sent, and the next number
 follows the largest value any call took, a deleted entity's included. A member a create sent empty (`""`, `null`, `false`, `[]` or
 `{}`), as a form sends a field left as it was, is not required: a call that
@@ -868,7 +869,8 @@ or fields it left as they were and spell the value before the call too, or for
 an item action a `set` of a scalar to the value it showed, or, for a `PUT`, a
 member it left out that the application cleared to an empty value, which calls
 that leave it out then store (`body.defaults`) as long as every call that left
-it out stored that value, or the plan is
+it out stored that value (a call naming a `reference` field's entity by its
+member does not leave the field out), or the plan is
 `unexplained-change`; an increment, slug, stamp, derived
 value or set must hold for every call of the tool, and an action is served
 only once a call found what it sets already set. A write is served only

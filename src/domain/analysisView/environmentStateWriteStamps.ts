@@ -274,9 +274,11 @@ export const readSpelledClocks = (
     const answered = ownMember(written, rule.field);
     const shown = ownMember(read, rule.field);
     if (!readSpellsCoarser(answered, shown)) continue;
+    const clock = readClock(answered)!;
     const spelled = formatClock(
-      readClock(answered)!.ms,
+      clock.ms,
       readClock(shown)!.format,
+      clock.subMillisecond,
     );
     if (spelled !== undefined) setOwnMember(fields, rule.field, spelled);
   }

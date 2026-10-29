@@ -67,6 +67,19 @@ numbers), so their entities carry the creates' answer spellings into later reads
   80 passed; the five MCP schema files 54 passed. The census stays at 694 plans and 398 served, with no plan or view
   changing.
 
+Greptile's review after main `21b19270` was merged in (`467ac78f`) raised three more, fixed:
+
+- A member a call left out and the application stored a fixed value for (`body.defaults`) is no longer turned into a
+  `sequence` with `sent` by a later call that left it out and got the next number.
+- Serving stores an update's clock at a coarser read's precision from the answer's own digits, so an answer to the
+  nanosecond read back to the microsecond keeps its microseconds.
+- A `PUT` that names a `reference` field's entity by its member supplies that field: it is not checked against, or
+  given, the default a `PUT` that left the field out showed.
+
+Their four tests fail on `467ac78f`. Gates pass but `knip`, whose one finding main `21b19270` reports too; `domain` +
+`services` 12,044 passed; focused boundaries 82 passed; the five MCP schema files 55 passed. Over the 148 captures, main
+serves 380 writes and this branch 392, with no plan or view changing from `467ac78f`.
+
 ## Not verified
 
 - No recording round ran with this branch, so its write tasks are not measured.

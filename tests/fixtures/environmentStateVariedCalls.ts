@@ -283,3 +283,81 @@ export const CLEARED_THEN_OMITTED_KEPT_ROWS = omittedOwnerPuts(false);
 
 /** A name-only PUT that clears the owner, then one that keeps it. */
 export const CLEARED_THEN_KEPT_ROWS = ownerPuts(true);
+
+/** Bundle creates: the first sends order 5, the second leaves it out and the application stores 5, the third leaves it out and gets 6. */
+export const DEFAULT_THEN_NUMBERED_ROWS: readonly TimedCaptureRow[] = (() => {
+  const bundle = (id: number, name: string, order: number): Entity => ({
+    id,
+    name,
+    order,
+  });
+  const [alpha, bravo] = [bundle(1, "Alpha", 0), bundle(2, "Bravo", 1)];
+  const [charlie, delta, echo] = [
+    bundle(3, "Charlie", 5),
+    bundle(4, "Delta", 5),
+    bundle(5, "Echo", 6),
+  ];
+  return [
+    ["GET", "/api/bundles", [alpha, bravo]],
+    ["GET", "/api/bundles/1", alpha],
+    ["GET", "/api/bundles/2", bravo],
+    ["POST", "/api/bundles", charlie, 201, { name: "Charlie", order: 5 }],
+    ["GET", "/api/bundles/3", charlie],
+    ["GET", "/api/bundles", [alpha, bravo, charlie]],
+    ["POST", "/api/bundles", delta, 201, { name: "Delta" }],
+    ["GET", "/api/bundles/4", delta],
+    ["GET", "/api/bundles", [alpha, bravo, charlie, delta]],
+    ["POST", "/api/bundles", echo, 201, { name: "Echo" }],
+    ["GET", "/api/bundles/5", echo],
+    ["GET", "/api/bundles", [alpha, bravo, charlie, delta, echo]],
+  ];
+})();
+
+/** Tasks marked done, each answer to the nanosecond and each read after it to the microsecond. */
+export const DONE_MICRO_ROWS: readonly TimedCaptureRow[] = DONE_CLOCK_ROWS.map(
+  (row, index) => {
+    const answer = DONE_CLOCK_ROWS[index - 1]?.[2] as Entity | undefined;
+    return row[0] === "GET" && (index === 4 || index === 6)
+      ? [
+          row[0],
+          row[1],
+          {
+            ...(row[2] as Entity),
+            done_at: String(answer!["done_at"]).replace(
+              /(\.\d{6})\d{3}Z$/u,
+              "$1Z",
+            ),
+          },
+        ]
+      : row;
+  },
+);
+
+/** Tag PUTs whose owner is a user object: one names the owner by `ownerId`, the other leaves it out and the application clears it. */
+export const OWNER_NAMED_THEN_CLEARED_ROWS: readonly TimedCaptureRow[] =
+  (() => {
+    const [ada, bo] = [
+      { id: 3, name: "Ada" },
+      { id: 4, name: "Bo" },
+    ];
+    const tag = (id: number, name: string, owner: Entity | null): Entity => ({
+      id,
+      name,
+      owner,
+    });
+    const [inbox, bills] = [tag(1, "Inbox", bo), tag(2, "Bills", bo)];
+    const [triage, paid] = [tag(1, "Triage", ada), tag(2, "Paid", null)];
+    return [
+      ["GET", "/api/users", [ada, bo]],
+      ["GET", "/api/users/3", ada],
+      ["GET", "/api/users/4", bo],
+      ["GET", "/api/tags", [inbox, bills]],
+      ["GET", "/api/tags/1", inbox],
+      ["GET", "/api/tags/2", bills],
+      ["PUT", "/api/tags/1", triage, 200, { name: "Triage", ownerId: 3 }],
+      ["GET", "/api/tags/1", triage],
+      ["PUT", "/api/tags/2", paid, 200, { name: "Paid" }],
+      ["GET", "/api/tags/2", paid],
+      ["GET", "/api/tags", [triage, paid]],
+    ];
+  })();

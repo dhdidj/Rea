@@ -492,9 +492,18 @@ export const updatedFields = (
         setOwnMember(written, rule.field, value.value);
     }
   }
-  // A member the call leaves out takes the default a whole-object update showed.
+  // A member the call leaves out takes the default a whole-object update showed; one a reference names by its member is not left out.
   for (const { member, value } of plan.body.defaults ?? [])
-    if (!Object.hasOwn(sent, member)) setOwnMember(written, member, value);
+    if (
+      !Object.hasOwn(sent, member) &&
+      !plan.rules.some(
+        (rule) =>
+          rule.rule === "reference" &&
+          rule.field === member &&
+          Object.hasOwn(sent, rule.member),
+      )
+    )
+      setOwnMember(written, member, value);
   const unspelled = derive(
     plan.rules.filter(
       (rule) => rule.rule !== "slug" || Object.hasOwn(sent, rule.from),

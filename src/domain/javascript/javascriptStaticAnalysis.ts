@@ -1,3 +1,5 @@
+import { hasScheme } from "../artifactPathSyntax.js";
+import { VITE_OUTPUT_DEPENDENCY_PREFIX } from "./javascriptStaticAnalysisTypes.js";
 import { createXhrOpenRequestQuery } from "./javascriptNetworkRequests.js";
 import { uniqueSortedBy } from "../canonicalOrdering.js";
 import * as t from "@babel/types";
@@ -266,7 +268,19 @@ function* retainViteReferencesSteps(
       if (examined++ % 1024 === 0) yield;
       const before = accumulator.references.length;
       if (specifier === undefined) accumulator.unknownFindings += 1;
-      addReference(findings, { node, kind: "dynamic-import", specifier });
+      const retainedSpecifier =
+        specifier === undefined ||
+        specifier === "" ||
+        specifier.startsWith(".") ||
+        specifier.startsWith("/") ||
+        hasScheme(specifier)
+          ? specifier
+          : `${VITE_OUTPUT_DEPENDENCY_PREFIX}${specifier}`;
+      addReference(findings, {
+        node,
+        kind: "dynamic-import",
+        specifier: retainedSpecifier,
+      });
       const reference = accumulator.references[before];
       if (reference !== undefined) ordered.push(reference);
     }

@@ -435,3 +435,32 @@ export const SENT_DELETED_THEN_NUMBERED_ROWS: readonly TimedCaptureRow[] =
       ["GET", "/api/bundles", [alpha, bravo, delta]],
     ];
   })();
+
+/** Bundles numbered per project: a create in project 1 sends order 9, one in project 2 leaves it out and gets 1. */
+export const SENT_IN_ANOTHER_PROJECT_ROWS: readonly TimedCaptureRow[] = (() => {
+  const bundle = (id: number, name: string, order: number): Entity => ({
+    id,
+    name,
+    order,
+  });
+  const [alpha, bravo] = [bundle(1, "Alpha", 0), bundle(2, "Bravo", 0)];
+  const [charlie, delta] = [bundle(3, "Charlie", 9), bundle(4, "Delta", 1)];
+  return [
+    ["GET", "/api/projects/1/bundles", [alpha]],
+    ["GET", "/api/projects/1/bundles/1", alpha],
+    ["GET", "/api/projects/2/bundles", [bravo]],
+    ["GET", "/api/projects/2/bundles/2", bravo],
+    [
+      "POST",
+      "/api/projects/1/bundles",
+      charlie,
+      201,
+      { name: "Charlie", order: 9 },
+    ],
+    ["GET", "/api/projects/1/bundles/3", charlie],
+    ["GET", "/api/projects/1/bundles", [alpha, charlie]],
+    ["POST", "/api/projects/2/bundles", delta, 201, { name: "Delta" }],
+    ["GET", "/api/projects/2/bundles/4", delta],
+    ["GET", "/api/projects/2/bundles", [bravo, delta]],
+  ];
+})();

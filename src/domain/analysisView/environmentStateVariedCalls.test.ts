@@ -12,6 +12,7 @@ import {
   NUMBERED_THEN_BLANK_ROWS,
   OWNER_CLEARED_THEN_NAMED_ROWS,
   SENT_DELETED_THEN_NUMBERED_ROWS,
+  SENT_IN_ANOTHER_PROJECT_ROWS,
   OWNER_NAMED_THEN_CLEARED_ROWS,
   DONE_MIXED_ROWS,
   DONE_ZONE_ROWS,
@@ -227,5 +228,21 @@ describe("writes whose calls send different members, alike in replay and serving
       expect.objectContaining({ field: "order", rule: "sequence" }),
     );
     expect(plan).toMatchObject({ served: false });
+  });
+
+  it("serves a create numbered in its own project past what it holds, though another project's create sent more", () => {
+    const plan = planOf(
+      SENT_IN_ANOTHER_PROJECT_ROWS,
+      "post_projects_bundles_by_id",
+    );
+    expect(plan).toMatchObject({ served: true });
+    expect(plan.rules).toContainEqual(
+      expect.objectContaining({
+        field: "order",
+        rule: "sequence",
+        scope: "collection",
+        sent: true,
+      }),
+    );
   });
 });

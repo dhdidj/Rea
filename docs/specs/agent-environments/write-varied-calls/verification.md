@@ -84,7 +84,9 @@ Greptile's review of `b56f8924` raised two more on numbered members, fixed: a me
 longer filled in for a call that leaves it out when a `sequence` with `sent` numbers it; and a later create the
 application numbered at or below a value an earlier create sent (9 sent and deleted, then 2) no longer turns the echo
 into a numbered `sequence`, since serving counts past every value a call sent. Their tests fail on `b56f8924`; gates
-pass but `knip` (main's finding), `domain` + `services` 12,048 passed, and the census is unchanged.
+pass but `knip` (main's finding), `domain` + `services` 12,048 passed, and the census is unchanged. Greptile's next
+review found that check counting values sent in other collections, which withheld a create numbered within its own
+collection; the check now counts them in the sequence's scope, and its test fails on `d4922b3d`.
 
 ## Not verified
 

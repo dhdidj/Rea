@@ -295,8 +295,8 @@ const refineCreate = (
       { rules: draft.plan.rules, body: draft.plan.body! },
       draft.observed!,
       later,
-      earlierOf(draft),
-    ) ?? reexplained(draft, explained.rules, later);
+      earlierOf(draft, evidence.collection),
+    ) ?? reexplained(draft, explained.rules, later, evidence.collection);
   if (widened === undefined) return false;
   retainFixed(context, widened.body.fixed.slice(draft.plan.body!.fixed.length));
   draft.plan.rules = widened.rules;
@@ -307,12 +307,15 @@ const refineCreate = (
 };
 
 /** What the plan's earlier calls showed, for merging a later one. */
-const earlierOf = (draft: WriteDraft) => ({
+const earlierOf = (draft: WriteDraft, collection: string) => ({
   kept: draft.kept,
   clockOf: (field: string) => clockEvidence(draft, field),
   startOf: (field: string) => draft.starts.get(field),
   createCollections: draft.createCollections,
-  sentLargest: (field: string) => draft.sentLargest.get(field),
+  sentLargest: (field: string, scope: "collection" | "type") =>
+    draft.sentLargest.get(
+      scope === "collection" ? `${field} ${collection}` : field,
+    ),
   ampersands: draft.ampersands,
 });
 
@@ -339,6 +342,7 @@ const reexplained = (
   draft: WriteDraft,
   learned: readonly FieldRule[],
   later: ReturnType<typeof laterOf>,
+  collection: string,
 ) => {
   const input = draft.exemplarInput;
   if (input === undefined) return undefined;
@@ -361,7 +365,7 @@ const reexplained = (
     },
     draft.observed!,
     later,
-    earlierOf(draft),
+    earlierOf(draft, collection),
   );
 };
 
@@ -751,9 +755,12 @@ const takeSequences = (
   for (const rule of draft.plan.rules) {
     if (rule.rule !== "echo") continue;
     const value = sequenceNumber(ownMember(created.fields, rule.field));
-    const held = draft.sentLargest.get(rule.field);
-    if (value !== undefined && (held === undefined || value > held))
-      draft.sentLargest.set(rule.field, value);
+    // By type and by collection, as a sequence adopted later may count either.
+    for (const key of [rule.field, `${rule.field} ${created.collection}`]) {
+      const held = draft.sentLargest.get(key);
+      if (value !== undefined && (held === undefined || value > held))
+        draft.sentLargest.set(key, value);
+    }
   }
 };
 

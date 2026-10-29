@@ -27,6 +27,8 @@ export interface ElectronIpcPairingState {
   readonly transmission: ElectronIpcRecord;
   readonly candidates: readonly ElectronIpcRecord[];
   readonly status: "paired" | "ambiguous" | "unpaired";
+  /** An observed match that may have unseen competitors when coverage is incomplete. */
+  readonly coverageLimitedCandidate: ElectronIpcRecord | null;
 }
 
 /** Flatten all per-file IPC facts into deterministic application records. */
@@ -88,6 +90,14 @@ export const createElectronIpcContext = (
       return {
         transmission,
         candidates,
+        coverageLimitedCandidate:
+          !coverageComplete &&
+          owner != null &&
+          candidates.length === 1 &&
+          candidates[0]?.finding.receiver === undefined &&
+          !matching.some((handler) => owners.get(handler.key) == null)
+            ? (candidates[0] ?? null)
+            : null,
         status:
           !uncertain &&
           candidates.length === 1 &&

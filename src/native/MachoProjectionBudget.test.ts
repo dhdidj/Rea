@@ -20,7 +20,7 @@ it.each([0xff, 0x01])(
     image.writeUInt32LE(count, 96);
     const read = async (offset: number, size: number) =>
       image.subarray(offset, offset + size);
-    const projectedBudget = 2048 + count * 2048 + (16 + 32 * count) * 24;
+    const projectedBudget = 8192 + 2048 + count * 2048 + (16 + 32 * count) * 24;
     const parsed = await readMachoCommandNames(
       read,
       image.length,
@@ -78,4 +78,24 @@ it("rejects section expansion before reading or allocating section records", asy
     unit: "projected_bytes",
   });
   expect(offsets.every((offset) => offset < 104)).toBe(true);
+});
+
+it("reserves the projection envelope for an empty command table", async () => {
+  const image = Buffer.alloc(32);
+  image.writeUInt32LE(0xfeedfacf, 0);
+  const read = async (offset: number, size: number) =>
+    image.subarray(offset, offset + size);
+  const minimum = 8192;
+  const parsed = await readMachoCommandNames(read, image.length, 0, 0, minimum);
+  expect(
+    Buffer.byteLength(JSON.stringify(projectMachoBinary(parsed))),
+  ).toBeLessThanOrEqual(minimum);
+  for (const budget of [0, minimum - 1]) {
+    await expect(
+      readMachoCommandNames(read, image.length, 0, 0, budget),
+    ).rejects.toMatchObject({
+      maximum: budget,
+      unit: "projected_bytes",
+    });
+  }
 });

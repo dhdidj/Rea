@@ -122,6 +122,9 @@ export class MachoCommandNamesLimitError extends Error {
   }
 }
 
+// Reserve fixed projection keys, scalar metadata, arrays and bounded limitation
+// messages even when the input has no load commands.
+const PROJECTED_ENVELOPE_BYTES = 8192;
 // A section becomes both a segment-view object and a set of indexed command
 // fields. Reserve for their keys, numbers, identities and JSON framing before
 // retaining the section. Strings are charged separately for escaping and hex.
@@ -280,6 +283,7 @@ export const readMachoCommandNames = async (
       );
     projectedBytes += count * perItem;
   };
+  chargeProjection(1, PROJECTED_ENVELOPE_BYTES);
   chargeProjection(table.commandCount, PROJECTED_COMMAND_BYTES);
   let records = table.commandCount;
   let retainedStringBytes = 0;

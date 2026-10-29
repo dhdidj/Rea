@@ -130,6 +130,9 @@ describe("Vite inherited dependency values", () => {
       ),
     ).toEqual(["./last.js"]);
   });
+});
+
+describe("Vite intrinsic prototype effects", () => {
   it("retains effects from unproven property descriptors", () => {
     for (const method of ["Object.defineProperty", "Reflect.defineProperty"]) {
       const effect = `${method}(Array.prototype, 'foo', externalDescriptor); __vite__mapDeps([0]);`;

@@ -49,6 +49,7 @@ export async function verifyBrowserSourceMap(
     const capture = await cli(
       "capture-browser-scenario",
       JSON.stringify({
+        command_timeout_ms: 60000,
         browser: { mode: "launch", executable_path: executable },
         start_url: { url: site.origin },
         actions: [

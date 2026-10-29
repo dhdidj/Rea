@@ -15,6 +15,7 @@ export const evidenceSubjectFormatSchema = z.enum([
   "dos-com",
   "raw-binary",
   "gamecube-dol",
+  "gameboy-rom",
   "zip",
   "ipa",
   "apk",
@@ -48,10 +49,14 @@ export const evidenceSubjectFormatSchema = z.enum([
 
 /** Format-owned architecture declarations shared by Evidence and persisted executions. */
 const detectedEvidenceSubjectDeclaration = {
-  format: evidenceSubjectFormatSchema.exclude(["raw-binary", "gamecube-dol"]),
+  format: evidenceSubjectFormatSchema.exclude([
+    "raw-binary",
+    "gamecube-dol",
+    "gameboy-rom",
+  ]),
   architecture: z
     .enum(BINARY_ARCHITECTURES)
-    .exclude([...RAW_ONLY_ARCHITECTURES])
+    .exclude([...RAW_ONLY_ARCHITECTURES, "sm83"])
     .nullable(),
 };
 
@@ -76,4 +81,8 @@ export const withEvidenceSubjectDeclaration = <
     base.extend(detectedEvidenceSubjectDeclaration),
     base.extend(rawEvidenceSubjectDeclaration),
     base.extend(gamecubeEvidenceSubjectDeclaration),
+    base.extend({
+      format: z.literal("gameboy-rom"),
+      architecture: z.literal("sm83"),
+    }),
   ]);

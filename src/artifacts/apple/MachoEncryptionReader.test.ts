@@ -808,6 +808,26 @@ describe("Mach-O encryption reader: large universal files", () => {
 });
 
 describe("Mach-O encryption reader: mapping budget", () => {
+  it("leaves the budget to later slices when a slice does not map its range", async () => {
+    const facts = await read(
+      fatImage([
+        {
+          cpu: CPU.x86_64,
+          bytes: padded(machoImage({ cpu: CPU.x86_64, commands: [text()] })),
+        },
+        { cpu: CPU.arm64, bytes: encrypted() },
+      ]),
+      5,
+    );
+    if (facts.status !== "parsed") throw new Error(facts.status);
+    expect(
+      facts.slices.map(({ status, range }) => [status, range?.mapping.status]),
+    ).toEqual([
+      ["absent", undefined],
+      ["encrypted", "mapped"],
+    ]);
+  });
+
   it("shares one mapping budget across slices and keeps each status", async () => {
     // text() is one segment with three section records: five mapping records.
     const facts = await read(

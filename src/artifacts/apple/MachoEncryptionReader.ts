@@ -142,7 +142,10 @@ const readSlice = async (
   // and dropped so a large table of small commands stays one buffer.
   const commands: MachoEncryptionCommand[] = [];
   let encryptionCommands = 0;
-  const segments: MachoLoadCommand[] = [];
+  // Null once this slice's segments need more records than the shared
+  // mapping budget has left; none are retained past that point.
+  let segments: MachoLoadCommand[] | null = [];
+  let segmentRecords = 0;
   // Commands seen before a failure stay as partial facts; an incomplete walk
   // can never prove the command is absent.
   const incomplete = ({
@@ -163,10 +166,13 @@ const readSlice = async (
       if (commands.length < RETAINED_ENCRYPTION_COMMANDS)
         commands.push(decodeEncryptionCommand(command));
     } else if (
-      command.command === LC_SEGMENT ||
-      command.command === LC_SEGMENT_64
-    )
-      segments.push(command);
+      segments !== null &&
+      (command.command === LC_SEGMENT || command.command === LC_SEGMENT_64)
+    ) {
+      segmentRecords += mappingRecords(command);
+      if (segmentRecords > budget.remaining) segments = null;
+      else segments.push(command);
+    }
   });
   if (framed.status !== "framed") return incomplete(framed);
   const identityIssue =
@@ -187,6 +193,8 @@ const readSlice = async (
   const outcome = classify(commands, encryptionCommands, header, slice.size);
   if (outcome.status !== "valid")
     return { ...base, ...outcome, commands, range: null };
+  // Only a slice that maps its range consumes the shared budget.
+  if (segments !== null) budget.remaining -= segmentRecords;
   return {
     ...base,
     status: outcome.command.cryptid === 0 ? "not-encrypted" : "encrypted",
@@ -197,7 +205,7 @@ const readSlice = async (
       header,
       segments,
       slice.offset,
-      budget,
+      budget.maximum,
     ),
   };
 };
@@ -290,9 +298,9 @@ const encryptedRange = (
     readonly cryptid: number;
   },
   header: MachoSliceHeader,
-  segmentCommands: readonly MachoLoadCommand[],
+  segmentCommands: readonly MachoLoadCommand[] | null,
   containerOffset: number,
-  budget: MappingBudget,
+  maximumMappingRecords: number,
 ): MachoEncryptedRange => {
   const start = command.cryptoff;
   const end = command.cryptoff + command.cryptsize;
@@ -302,7 +310,13 @@ const encryptedRange = (
     slice_end: end,
     container_start: containerOffset + start,
     container_end: containerOffset + end,
-    mapping: mapRange(start, end, header, segmentCommands, budget),
+    mapping:
+      segmentCommands === null
+        ? {
+            status: "unknown",
+            reason: `mapping needs more than the ${maximumMappingRecords} segment and section records shared by all slices`,
+          }
+        : mapRange(start, end, header, segmentCommands),
   };
 };
 
@@ -326,19 +340,9 @@ const mapRange = (
   end: number,
   header: MachoSliceHeader,
   segmentCommands: readonly MachoLoadCommand[],
-  budget: MappingBudget,
 ): MachoEncryptedRange["mapping"] => {
   const segments: SegmentFacts[] = [];
   for (const command of segmentCommands) {
-    // Charge before decoding: a segment yields at most two fragments, and
-    // each section record it can hold is decoded and reported at most once.
-    const records = 2 + sectionCapacity(command);
-    if (records > budget.remaining)
-      return {
-        status: "unknown",
-        reason: `mapping needs more than the ${budget.maximum} segment and section records shared by all slices`,
-      };
-    budget.remaining -= records;
     if ((command.command === LC_SEGMENT_64) !== header.wide)
       return {
         status: "unknown",
@@ -416,12 +420,18 @@ const unmapped = (from: number, to: number) => ({
   vm_end: null,
 });
 
-/** Section records that fit in a segment command's `cmdsize`. */
-const sectionCapacity = ({ command, body }: MachoLoadCommand): number => {
+/**
+ * Mapping records a segment command can produce: at most two fragments, and
+ * each section record that fits in its `cmdsize`, decoded and reported once.
+ */
+const mappingRecords = ({ command, body }: MachoLoadCommand): number => {
   const wide = command === LC_SEGMENT_64;
-  return Math.max(
-    0,
-    Math.floor((body.byteLength - (wide ? 72 : 56)) / (wide ? 80 : 68)),
+  return (
+    2 +
+    Math.max(
+      0,
+      Math.floor((body.byteLength - (wide ? 72 : 56)) / (wide ? 80 : 68)),
+    )
   );
 };
 

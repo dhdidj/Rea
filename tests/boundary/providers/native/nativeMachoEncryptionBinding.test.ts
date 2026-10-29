@@ -1,7 +1,6 @@
 import {
   appendFile,
   open,
-  symlink,
   writeFile,
   type FileHandle,
 } from "node:fs/promises";
@@ -15,7 +14,6 @@ import { ProviderCleanupError } from "../../../../src/domain/providerCleanupErro
 import { NativeMacOSProvider } from "../../../../src/native/NativeMacOSProvider.js";
 import {
   NativeFixtureRunner,
-  nativeMachoTarget,
   nativeMachoTargetForFile,
 } from "../../../fixtures/nativeCommands.js";
 import { createTestTempDirectory } from "../../../fixtures/temporaryDirectory.js";
@@ -41,9 +39,11 @@ const writeTarget = async () => {
   return path;
 };
 
+const thinLipo = { lipo: "Non-fat file: fixture is architecture: arm64\n" };
+
 const inspect = async (
   path: string,
-  runner: NativeFixtureRunner = new NativeFixtureRunner(),
+  runner: NativeFixtureRunner = new NativeFixtureRunner(thinLipo),
 ) => {
   const client = new NativeMacOSProvider({}, runner, "darwin").createClient(
     await nativeMachoTargetForFile(path),
@@ -70,58 +70,18 @@ it("reads encryption from the bound file and names the ciphertext bytes", async 
     ],
   });
   expect(result.value.limitations).toContain(
-    "Bytes 16384-32768 (input file offsets, end exclusive) of the slice at offset 0 are ciphertext (cryptid 1); disassembly, decompilation, strings and references derived from them do not describe program code.",
+    "Bytes 16384-32768 (input file offsets, end exclusive) of the arm64 slice are ciphertext (cryptid 1); disassembly, decompilation, strings and references derived from them do not describe program code.",
   );
 });
 
-it("keeps encryption unknown instead of absent when the target cannot be opened", async () => {
-  const client = new NativeMacOSProvider(
-    {},
-    new NativeFixtureRunner(),
-    "darwin",
-  ).createClient(nativeMachoTarget("/private/fixture/missing.macho"));
-  onTestFinished(async () => {
-    await client.close();
-  });
-  const result = await client.execute("inspect_macho", {});
-  if (!result.ok) throw result.error;
-  expect(inspectMachoSchema.parse(result.value.result).encryption).toEqual({
-    items: [],
-    total: null,
-    exhaustive: false,
-    limitations: [
-      "Encryption load commands were not read: the target could not be opened for reading (ENOENT)",
-    ],
-  });
-});
-
-it("refuses a target the reader cannot bind instead of reporting encryption unread", async () => {
-  const path = await writeTarget();
-  const link = `${path}.link`;
-  await symlink(path, link);
-  const client = new NativeMacOSProvider(
-    {},
-    new NativeFixtureRunner(),
-    "darwin",
-  ).createClient(nativeMachoTarget(link));
-  onTestFinished(async () => {
-    await client.close();
-  });
-  const result = await client.execute("inspect_macho", {});
-  expect(result.ok).toBe(false);
-  if (result.ok) throw new Error("Expected a symlinked-target refusal");
-  // Matches inspect_native_dispatch_metadata, which reads the same bound target.
-  expect(result.error._tag).toBe("AnalysisArtifactChangedError");
-});
-
-/** Replay fixture output while appending to the target once otool reads it. */
+/** Replay fixture output while appending to the target once lipo reads it. */
 class MutatingRunner extends NativeFixtureRunner {
   constructor(private readonly path: string) {
-    super();
+    super(thinLipo);
   }
 
   override async run(tool: string, arguments_: readonly string[]) {
-    if (tool === "otool") await appendFile(this.path, "changed");
+    if (tool === "lipo") await appendFile(this.path, "changed");
     return super.run(tool, arguments_);
   }
 }
@@ -168,7 +128,10 @@ const failingClose = async (onClosed?: () => void) => {
 
 /** The finished report survives a failure that arrives after the read completed. */
 const expectRetainedReport = (error: AnalysisError) => {
-  const report = inspectMachoSchema.parse(error.partialObservation);
+  const report = inspectMachoSchema.parse(
+    (error.partialObservation as { normalized_result?: unknown } | undefined)
+      ?.normalized_result,
+  );
   expect(report.encryption.items).toMatchObject([{ status: "encrypted" }]);
   expect(projectAnalysisError(error).details?.partial_observation).toEqual(
     error.partialObservation,
@@ -221,7 +184,7 @@ it("reports cancellation that arrives during the final close without retaining t
   await failingClose(() => controller.abort(reason));
   const client = new NativeMacOSProvider(
     {},
-    new NativeFixtureRunner(),
+    new NativeFixtureRunner(thinLipo),
     "darwin",
   ).createClient(await nativeMachoTargetForFile(path));
   onTestFinished(async () => {

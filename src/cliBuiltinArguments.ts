@@ -189,6 +189,41 @@ export const declaredSensitiveValues = (
   values.delete("");
   return [...values];
 };
+/** Valued `mcp add` options from its public help. */
+const MCP_ADD_VALUED_OPTIONS = ["--agent", "--command", "-c"] as const;
+
+/**
+ * Find a valued `mcp add` option supplied without its value. Incur's
+ * registration helper consumes an agent or command only when the next token
+ * is truthy, so a trailing valued option (or one followed by another flag)
+ * silently falls back to the defaults and registers anyway, unlike REA-owned
+ * commands whose parser rejects a missing value. REA rejects that here, in
+ * its own entry point, before Incur runs, so no runner is invoked and no
+ * client settings are written. Help requests are left alone: Incur strips
+ * help flags before command parsing and shows help without side effects.
+ * A lone `-` still counts as a value, matching the parser's treatment of a
+ * present token. Returns the offending option, or undefined when the
+ * invocation is not a `mcp add` with an incomplete valued option.
+ */
+export const findMcpAddMissingValue = (
+  arguments_: readonly string[],
+): string | undefined => {
+  if (arguments_[0] !== "mcp" || arguments_[1] !== "add") return undefined;
+  const rest = arguments_.slice(2);
+  if (rest.includes("--help") || rest.includes("-h")) return undefined;
+  for (let index = 0; index < rest.length; index += 1) {
+    const token = rest[index]!;
+    const option = MCP_ADD_VALUED_OPTIONS.find(
+      (candidate) => token === candidate,
+    );
+    if (option === undefined) continue;
+    const next = rest[index + 1];
+    if (next === undefined || (next.startsWith("-") && next !== "-"))
+      return option;
+  }
+  return undefined;
+};
+
 /** Shell completion is a transport protocol; its words are not CLI invocations. */
 export const CLI_COMPLETION_SHELLS = [
   "bash",

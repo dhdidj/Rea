@@ -10,6 +10,16 @@ const candidates = (source: string) =>
     .map(({ specifier }) => specifier);
 
 describe("Vite inherited dependency values", () => {
+  it("retains effects from unproven property descriptors", () => {
+    for (const method of ["Object.defineProperty", "Reflect.defineProperty"]) {
+      const effect = `${method}(Array.prototype, 'foo', externalDescriptor); __vite__mapDeps([0]);`;
+      expect(candidates(effect)).toEqual([null]);
+      const setup = `const externalDescriptor={get configurable(){Array.prototype.map=()=>['./last.js'];return true},value:1};`;
+      expect(Array.from(runInNewContext(setup + helper + effect))).toEqual([
+        "./last.js",
+      ]);
+    }
+  });
   it("invalidates caches when an intrinsic prototype escapes directly or through an alias", () => {
     for (const effect of [
       `opaque(Array.prototype);`,

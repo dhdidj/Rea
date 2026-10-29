@@ -11,10 +11,8 @@ import {
   type JavaScriptIntrinsicInvocation,
 } from "./javascriptElectronMemberWrites.js";
 import { createSemanticModuleInterop } from "./javascriptModuleInterop.js";
-import {
-  resolveSemanticBindingState,
-  type JavaScriptSemanticAnalysisState,
-} from "./javascriptSemanticState.js";
+import { isUnmodifiedGlobalReference } from "./javascriptSemanticAmbientWrites.js";
+import type { JavaScriptSemanticAnalysisState } from "./javascriptSemanticState.js";
 import { traverseJavaScriptValueAstSteps } from "./javascriptSemanticTraversal.js";
 import { semanticArrayIndex } from "./javascriptSemanticPropertyPaths.js";
 import {
@@ -179,7 +177,7 @@ export function* invalidateJavaScriptViteCachesSteps(
       if (
         identity?.inheritedArrayPrototype === true ||
         (identity?.intrinsicPrototype === true &&
-          !localPrototypeOperation(escape, context))
+          !(yield* localPrototypeOperationSteps(escape, context)))
       )
         invalidate(null);
     }
@@ -234,10 +232,10 @@ type Interop = ReturnType<typeof createSemanticModuleInterop>;
 
 /** retain value exposure separately from known receiver mutation semantics. */
 /** These intrinsic operations do not expose a proven ordinary receiver. */
-const localPrototypeOperation = (
+function* localPrototypeOperationSteps(
   escape: CacheExposure,
   context: CacheEffectContext,
-): boolean => {
+): Generator<void, boolean> {
   const node = escape.node;
   if (!t.isCallExpression(node) && !t.isOptionalCallExpression(node))
     return false;
@@ -249,7 +247,6 @@ const localPrototypeOperation = (
     [
       "intrinsic.Object.defineProperty",
       "intrinsic.Reflect.defineProperty",
-      "intrinsic.Object.defineProperties",
     ].includes(path) &&
     directTarget === escape.value &&
     t.isMemberExpression(directTarget) &&
@@ -257,13 +254,22 @@ const localPrototypeOperation = (
     ["Array", "Object"].includes(directTarget.object.name) &&
     semanticStaticPropertyKey(directTarget.property, directTarget.computed) ===
       "prototype" &&
-    resolveSemanticBindingState(
-      context.state,
+    isUnmodifiedGlobalReference(
       directTarget.object,
+      context.state,
       directTarget.object.name,
-    ) === undefined
-  )
-    return true;
+    )
+  ) {
+    const key = invocation.arguments?.[1];
+    const descriptor = invocation.arguments?.[2];
+    return (
+      !context.objectPrototypeUncertain &&
+      key !== undefined &&
+      context.interop.staticString(key) !== undefined &&
+      t.isObjectExpression(descriptor) &&
+      (yield* ordinaryObjectLiteralSteps(descriptor))
+    );
+  }
   if (
     ![
       "intrinsic.Object.getPrototypeOf",
@@ -279,7 +285,7 @@ const localPrototypeOperation = (
     !t.isSpreadElement(target) &&
     context.identities.read(target)?.allocation?.kind === "container"
   );
-};
+}
 
 function* indexCallExposuresSteps(
   calls: readonly Call[],

@@ -158,6 +158,34 @@ const initializeCache = "const initialize = __vite__mapDeps; initialize([]); ";
 
 const allScenarios: readonly ViteScenario[] = [
   {
+    file: "owned-independent-constructor.js",
+    source: mapDependenciesWithEffects(
+      'const values = __vite__mapDeps(["constructor"], void 0, {constructor: {}}); opaque(values); __vite__mapDeps([0]);',
+    ),
+    callSources: [
+      '__vite__mapDeps(["constructor"], void 0, {constructor: {}})',
+      defaultCall,
+    ],
+    callOccurrences: [0, 1],
+    unknownCallOccurrences: [0],
+    resolved: ["first.js"],
+    unknown: true,
+  },
+  {
+    file: "own-arbitrary-prototype-value.js",
+    source: mapDependenciesWithEffects(
+      'const values = __vite__mapDeps(["foo"], void 0, {foo: Array.prototype}); opaque(values); __vite__mapDeps([0]);',
+    ),
+    callSources: [
+      '__vite__mapDeps(["foo"], void 0, {foo: Array.prototype})',
+      defaultCall,
+    ],
+    callOccurrences: [0, 1],
+    unknownCallOccurrences: [0, 1],
+    resolved: [],
+    unknown: true,
+  },
+  {
     file: "harmless-parameter-property-keys.js",
     source: mapDependencies('["./first.js", {i: 0, arguments: 1}]', "[0]"),
     resolved: ["first.js"],

@@ -10,6 +10,23 @@ const candidates = (source: string) =>
     .map(({ specifier }) => specifier);
 
 describe("Vite inherited dependency values", () => {
+  it("does not treat replaced shared array prototype methods as read-only", () => {
+    for (const method of [
+      "at",
+      "includes",
+      "indexOf",
+      "lastIndexOf",
+      "slice",
+    ]) {
+      const effect = `__vite__mapDeps([0]); const cache=__vite__mapDeps.f; const proto=cache.__proto__; proto.${method}=function(){this[0]='./last.js'}; cache.${method}(); __vite__mapDeps([0]);`;
+      expect(candidates(effect)).toEqual([null, null]);
+      expect(Array.from(runInNewContext(helper + effect))).toEqual([
+        "./last.js",
+      ]);
+    }
+    const safe = `__vite__mapDeps([0]); const cache=__vite__mapDeps.f; const proto=cache.__proto__; proto.unrelated=function(){}; cache.slice(); __vite__mapDeps([0]);`;
+    expect(candidates(safe)).toEqual(["./first.js", "./first.js"]);
+  });
   it("copies enumerable prototype values without copying prototype identity", () => {
     const init = `const proto=__vite__mapDeps(['__proto__'])[0];`;
     for (const copy of [

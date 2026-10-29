@@ -47,6 +47,8 @@ export function* createViteCacheReadProofSteps(
       const [kind, owner, key] = path;
       if (kind === "cache" || kind === "unknown")
         writes.retain([owner ?? null, key ?? null]);
+      else if (kind === "inherited-array-prototype")
+        writes.retain([null, key ?? null]);
     },
     *isReadSteps(
       receiver,

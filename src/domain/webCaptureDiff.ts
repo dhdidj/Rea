@@ -1157,6 +1157,25 @@ const scriptsDimension = (
   const afterComplete =
     sectionsComplete(after, ["scripts"]) &&
     after.completeness.dropped_events.scripts === 0;
+  // A null declaration may represent an omitted URL. The capture ledger is
+  // section-wide, so it cannot identify which null script was affected.
+  // Unavailable map bodies alone do not erase an observed declaration.
+  const declarationMayBeOmitted = (inspection: WebPageInspection) =>
+    inspection.completeness.policy_filtered_sections.includes("source_maps") ||
+    inspection.completeness.truncated_sections.includes("source_maps") ||
+    inspection.completeness.excluded.some(
+      (item) =>
+        item.section === "source_maps" &&
+        item.count !== 0 &&
+        [
+          "disallowed_origin",
+          "unsupported_url",
+          "resource_budget_exhausted",
+          "invalid_protocol_value",
+        ].includes(item.reason),
+    );
+  const beforeMayOmitDeclaration = declarationMayBeOmitted(before);
+  const afterMayOmitDeclaration = declarationMayBeOmitted(after);
   const left = new Map<string, string>();
   const right = new Map<string, string>();
   let valuesComplete = true;
@@ -1171,6 +1190,112 @@ const scriptsDimension = (
       prior.length > 0 &&
       later.length > 0 &&
       all.every((script) => script.source.included);
+    const mapComparable =
+      prior.every(
+        (script) => script.source_map_url !== null || !beforeMayOmitDeclaration,
+      ) &&
+      later.every(
+        (script) => script.source_map_url !== null || !afterMayOmitDeclaration,
+      );
+    // Match declarations only within the same fully observed metadata group.
+    // An omitted declaration can explain one value in its own group, not a
+    // declaration associated with a different observed script hash.
+    const metadataFields = [
+      "cdp_hash",
+      "length",
+      "is_module",
+      "language",
+    ] as const;
+    type ScriptMetadata = Partial<
+      Record<
+        (typeof metadataFields)[number] | "source_sha256",
+        string | number | boolean
+      >
+    >;
+    const scriptMetadata = (script: Script): ScriptMetadata => {
+      const metadata: ScriptMetadata = {};
+      for (const field of metadataFields) {
+        const value = script[field];
+        if (value !== null) metadata[field] = value;
+      }
+      if (sourceComparable && script.source.included)
+        metadata.source_sha256 = script.source.artifact.sha256;
+      return metadata;
+    };
+    const metadataCompatible = (
+      left: ScriptMetadata,
+      right: ScriptMetadata,
+    ): boolean =>
+      [...metadataFields, "source_sha256" as const].every(
+        (field) =>
+          left[field] === undefined ||
+          right[field] === undefined ||
+          left[field] === right[field],
+      );
+    // Each script keeps the metadata it actually observed. A null field does
+    // not erase that field for the rest of the URL group, and an omitted
+    // declaration can explain only one compatible script.
+    const mapFactsExceed = (
+      observed: readonly Script[],
+      observedMayOmit: boolean,
+      complete: readonly Script[],
+      completeMayOmit: boolean,
+    ): boolean => {
+      const needed = observed.flatMap((script) =>
+        script.source_map_url === null && observedMayOmit
+          ? []
+          : [
+              {
+                metadata: scriptMetadata(script),
+                declaration: script.source_map_url,
+              },
+            ],
+      );
+      const slots = complete.map((script) => ({
+        metadata: scriptMetadata(script),
+        declaration: script.source_map_url,
+        unknown: script.source_map_url === null && completeMayOmit,
+      }));
+      if (needed.length > 8 || slots.length > 12) return false;
+      const used = Array.from({ length: slots.length }, () => false);
+      const assign = (index: number): boolean => {
+        if (index === needed.length) return true;
+        const item = needed[index];
+        if (item === undefined) return false;
+        for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
+          if (used[slotIndex]) continue;
+          const slot = slots[slotIndex];
+          if (slot === undefined) continue;
+          if (!metadataCompatible(item.metadata, slot.metadata)) continue;
+          if (!slot.unknown && slot.declaration !== item.declaration) continue;
+          used[slotIndex] = true;
+          if (assign(index + 1)) return true;
+          used[slotIndex] = false;
+        }
+        return false;
+      };
+      return !assign(0);
+    };
+    const provenMapDifference =
+      !mapComparable &&
+      prior.length > 0 &&
+      later.length > 0 &&
+      ((afterComplete &&
+        mapFactsExceed(
+          prior,
+          beforeMayOmitDeclaration,
+          later,
+          afterMayOmitDeclaration,
+        )) ||
+        (beforeComplete &&
+          mapFactsExceed(
+            later,
+            afterMayOmitDeclaration,
+            prior,
+            beforeMayOmitDeclaration,
+          )));
+    if (prior.length > 0 && later.length > 0 && !mapComparable)
+      valuesComplete = false;
     if (
       prior.length > 0 &&
       later.length > 0 &&
@@ -1186,7 +1311,7 @@ const scriptsDimension = (
       items.map((script) =>
         digestCanonicalValue({
           url: script.url,
-          source_map_url: script.source_map_url,
+          ...(mapComparable ? { source_map_url: script.source_map_url } : {}),
           ...Object.fromEntries(fields.map((field) => [field, script[field]])),
           ...(sourceComparable && script.source.included
             ? { source_sha256: script.source.artifact.sha256 }
@@ -1196,21 +1321,34 @@ const scriptsDimension = (
     const priorSamples = project(prior);
     const laterSamples = project(later);
     if (
+      !provenMapDifference &&
       !(beforeComplete && afterComplete) &&
       !(beforeComplete && !samplesContained(laterSamples, priorSamples)) &&
       !(afterComplete && !samplesContained(priorSamples, laterSamples))
     )
       continue;
     if (prior.length > 0)
-      left.set(identity, digestCanonicalValue(priorSamples.sort()));
+      left.set(
+        identity,
+        digestCanonicalValue({
+          samples: priorSamples.sort(),
+          proof: provenMapDifference ? "before" : null,
+        }),
+      );
     if (later.length > 0)
-      right.set(identity, digestCanonicalValue(laterSamples.sort()));
+      right.set(
+        identity,
+        digestCanonicalValue({
+          samples: laterSamples.sort(),
+          proof: provenMapDifference ? "after" : null,
+        }),
+      );
   }
   return compareDimension(
     left,
     right,
     beforeComplete && afterComplete && valuesComplete,
-    "Script inventory or corresponding source/metadata evidence was incomplete in at least one observation.",
+    "Script inventory, source-map declarations, or corresponding source/metadata evidence was incomplete in at least one observation.",
     true, // Selected map entries already carry their directional absence proof.
   );
 };

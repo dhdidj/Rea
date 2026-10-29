@@ -80,6 +80,12 @@ Their tests fail on `467ac78f`, and the reference case with the clearing call fi
 `knip`, whose one finding main `21b19270` reports too; `domain` + `services` 12,046 passed; focused boundaries 82 passed; the five MCP schema files 55 passed. Over the 148 captures, main
 serves 380 writes and this branch 392, with no plan or view changing from `467ac78f`.
 
+Greptile's review of `b56f8924` raised two more on numbered members, fixed: a member a call sent empty (`""`) is no
+longer filled in for a call that leaves it out when a `sequence` with `sent` numbers it; and a later create the
+application numbered at or below a value an earlier create sent (9 sent and deleted, then 2) no longer turns the echo
+into a numbered `sequence`, since serving counts past every value a call sent. Their tests fail on `b56f8924`; gates
+pass but `knip` (main's finding), `domain` + `services` 12,048 passed, and the census is unchanged.
+
 ## Not verified
 
 - No recording round ran with this branch, so its write tasks are not measured.

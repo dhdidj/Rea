@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DONE_CLOCK_ROWS,
   FEWER_MEMBERS_ROWS,
+  NUMBERED_THEN_BLANK_ROWS,
   NUMBERED_UNLESS_SENT_ROWS,
   OWNER_CLEARED_THEN_NAMED_ROWS,
   OWNER_NAMED_THEN_CLEARED_ROWS,
@@ -111,5 +112,12 @@ describe("served writes whose calls send different members", () => {
     ).toMatchObject({
       message: expect.stringContaining("email"),
     });
+  });
+
+  it("numbers a created bundle that leaves its order out, though a recorded create sent it empty", () => {
+    const bundles = servedFrom(NUMBERED_THEN_BLANK_ROWS);
+    expect(
+      bundles.answer("post_bundles", { body: { name: "Echo" } }).body,
+    ).toMatchObject({ name: "Echo", order: "2" });
   });
 });

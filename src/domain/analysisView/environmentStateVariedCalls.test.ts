@@ -9,7 +9,9 @@ import {
   DEFAULT_THEN_NUMBERED_ROWS,
   DONE_CLOCK_ROWS,
   DONE_MICRO_ROWS,
+  NUMBERED_THEN_BLANK_ROWS,
   OWNER_CLEARED_THEN_NAMED_ROWS,
+  SENT_DELETED_THEN_NUMBERED_ROWS,
   OWNER_NAMED_THEN_CLEARED_ROWS,
   DONE_MIXED_ROWS,
   DONE_ZONE_ROWS,
@@ -218,4 +220,12 @@ describe("writes whose calls send different members, alike in replay and serving
       );
     },
   );
+
+  it("serves no create numbered below a value an earlier create sent, which serving counts past", () => {
+    const plan = planOf(SENT_DELETED_THEN_NUMBERED_ROWS, "post_bundles");
+    expect(plan.rules).not.toContainEqual(
+      expect.objectContaining({ field: "order", rule: "sequence" }),
+    );
+    expect(plan).toMatchObject({ served: false });
+  });
 });

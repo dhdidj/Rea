@@ -108,6 +108,8 @@ export interface WriteDraft {
   readonly starts: Map<string, number>;
   /** Collections of accepted create calls, used to check late sequence adoption. */
   readonly createCollections: string[];
+  /** The largest integer each echoed field held on an accepted create, which a sequence adopted later must count past. */
+  readonly sentLargest: Map<string, number>;
   /** The collection a create writes into when its own path names no state type: the one its returned id was read under. */
   readonly linked?: string | undefined;
   /** Fields an item action's call found already at the value it sets them to. */

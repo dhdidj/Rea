@@ -363,7 +363,21 @@ export const createdFields = (
   idField?: string,
 ): Applied<JsonObject> => {
   if (plan.body === null) return err("The tool has no modelled body.");
-  const call = withBlanks(plan.body, sentCall);
+  // A member a `sequence` with `sent` numbers when a call leaves it out takes the next number, not an empty value one sent.
+  const numbered = new Set(
+    plan.rules.flatMap((rule) =>
+      rule.rule === "sequence" && rule.sent === true ? [rule.field] : [],
+    ),
+  );
+  const call = withBlanks(
+    {
+      ...plan.body,
+      blank: (plan.body.blank ?? []).filter(
+        ({ member }) => !numbered.has(member),
+      ),
+    },
+    sentCall,
+  );
   const problem = bodyProblem(plan.body, call, {
     entity: { ...copiedShapes(plan.rules, observed), ...observed },
   });

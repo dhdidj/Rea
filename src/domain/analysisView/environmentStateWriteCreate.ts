@@ -312,6 +312,7 @@ const earlierOf = (draft: WriteDraft) => ({
   clockOf: (field: string) => clockEvidence(draft, field),
   startOf: (field: string) => draft.starts.get(field),
   createCollections: draft.createCollections,
+  sentLargest: (field: string) => draft.sentLargest.get(field),
   ampersands: draft.ampersands,
 });
 
@@ -746,6 +747,13 @@ const takeSequences = (
         isObject(made) ? sequenceNumber(ownMember(made, member)) : undefined,
       );
     }
+  }
+  for (const rule of draft.plan.rules) {
+    if (rule.rule !== "echo") continue;
+    const value = sequenceNumber(ownMember(created.fields, rule.field));
+    const held = draft.sentLargest.get(rule.field);
+    if (value !== undefined && (held === undefined || value > held))
+      draft.sentLargest.set(rule.field, value);
   }
 };
 

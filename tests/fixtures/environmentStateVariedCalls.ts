@@ -388,3 +388,50 @@ export const OWNER_NAMED_THEN_CLEARED_ROWS = ownerReferencePuts(false);
 
 /** A PUT that leaves the owner out and clears it, then one naming it by `ownerId`. */
 export const OWNER_CLEARED_THEN_NAMED_ROWS = ownerReferencePuts(true);
+
+/** Bundle creates with a string order: the first leaves it out and the application numbers it "2", the second sends "" and stores it. */
+export const NUMBERED_THEN_BLANK_ROWS: readonly TimedCaptureRow[] = (() => {
+  const bundle = (id: number, name: string, order: string): Entity => ({
+    id,
+    name,
+    order,
+  });
+  const [alpha, bravo] = [bundle(1, "Alpha", "0"), bundle(2, "Bravo", "1")];
+  const [charlie, delta] = [bundle(3, "Charlie", "2"), bundle(4, "Delta", "")];
+  return [
+    ["GET", "/api/bundles", [alpha, bravo]],
+    ["GET", "/api/bundles/1", alpha],
+    ["GET", "/api/bundles/2", bravo],
+    ["POST", "/api/bundles", charlie, 201, { name: "Charlie" }],
+    ["GET", "/api/bundles/3", charlie],
+    ["GET", "/api/bundles", [alpha, bravo, charlie]],
+    ["POST", "/api/bundles", delta, 201, { name: "Delta", order: "" }],
+    ["GET", "/api/bundles/4", delta],
+    ["GET", "/api/bundles", [alpha, bravo, charlie, delta]],
+  ];
+})();
+
+/** Bundle creates: the first sends order 9 and is deleted, the second leaves it out and the application numbers it 2. */
+export const SENT_DELETED_THEN_NUMBERED_ROWS: readonly TimedCaptureRow[] =
+  (() => {
+    const bundle = (id: number, name: string, order: number): Entity => ({
+      id,
+      name,
+      order,
+    });
+    const [alpha, bravo] = [bundle(1, "Alpha", 0), bundle(2, "Bravo", 1)];
+    const [charlie, delta] = [bundle(3, "Charlie", 9), bundle(4, "Delta", 2)];
+    return [
+      ["GET", "/api/bundles", [alpha, bravo]],
+      ["GET", "/api/bundles/1", alpha],
+      ["GET", "/api/bundles/2", bravo],
+      ["POST", "/api/bundles", charlie, 201, { name: "Charlie", order: 9 }],
+      ["GET", "/api/bundles/3", charlie],
+      ["GET", "/api/bundles", [alpha, bravo, charlie]],
+      ["DELETE", "/api/bundles/3", null, 204],
+      ["GET", "/api/bundles", [alpha, bravo]],
+      ["POST", "/api/bundles", delta, 201, { name: "Delta" }],
+      ["GET", "/api/bundles/4", delta],
+      ["GET", "/api/bundles", [alpha, bravo, delta]],
+    ];
+  })();

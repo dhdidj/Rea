@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { registerGpuCommands } from "./cli/gpuCommands.js";
@@ -423,6 +423,11 @@ export const createCli = (
                 process.exitCode = code;
               })
             )(1);
+          } else {
+            // Registration verified: drop the backup left in the home
+            // directory. On failure the backup stays for manual recovery.
+            const backupPath = `${settingsPath}.rea.backup`;
+            if (existsSync(backupPath)) unlinkSync(backupPath);
           }
         });
       }

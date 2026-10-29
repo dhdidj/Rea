@@ -54,7 +54,10 @@ cliTest(
       command: expect.any(String),
       env: { KEEP_ME: "1" },
     });
-    expect(await readFile(`${settingsPath}.rea.backup`, "utf8")).toBe(original);
+    // A successful registration removes the backup it took.
+    await expect(
+      readFile(`${settingsPath}.rea.backup`, "utf8"),
+    ).rejects.toThrow();
     expect(after.theme).toBe("dark");
 
     // The equals form --agent=amp is parsed as a spaced form before Incur sees

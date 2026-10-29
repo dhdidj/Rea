@@ -38,6 +38,12 @@ export const captureViewRequestSchema = z.strictObject({
   detail: z.enum(["preview", "complete"]).default("preview"),
   offset: z.int().nonnegative().default(0),
   limit: z.int().positive().default(64),
+  include_response_content_type: z
+    .boolean()
+    .optional()
+    .describe(
+      "Select the recorded HAR response.content.mimeType in preview pages without headers or bodies. Only supported with detail preview and HAR Evidence; missing fields remain unknown.",
+    ),
 });
 
 const protobufSummarySchema = z.strictObject({
@@ -381,7 +387,11 @@ const selectHeadlines = (
 };
 
 /** Select already parsed producer facts without interpreting HTTP or payload bytes again. */
-const preview = (record: WebNetworkCaptureRecord, format: string) => {
+const preview = (
+  record: WebNetworkCaptureRecord,
+  format: string,
+  includeResponseContentType: boolean,
+) => {
   const source = object(record.reported);
   const reported: Record<string, JsonValue> = {};
   const selectedPointers = new Set<string>();
@@ -392,6 +402,7 @@ const preview = (record: WebNetworkCaptureRecord, format: string) => {
         : null;
     const mitmproxyFacets =
       index !== null && textualFlowType(index) ? index : null;
+    const harFacets = includeResponseContentType ? indexFacets(record) : null;
     for (const key of RECORD_HEADLINES[format] ?? [])
       if (
         Object.hasOwn(source, key) &&
@@ -410,13 +421,31 @@ const preview = (record: WebNetworkCaptureRecord, format: string) => {
         reported[key] = value;
         continue;
       }
-      reported[key] = selectHeadlines(
+      const selected = selectHeadlines(
         fields,
         key,
         format,
         mitmproxyFacets,
         selectedPointers,
       );
+      if (key === "response" && harFacets !== null) {
+        const content =
+          Object.hasOwn(fields, "content") && fields.content !== undefined
+            ? object(fields.content)
+            : null;
+        const mime = content?.mimeType;
+        const pointer = "/response/content/mimeType";
+        if (
+          content !== null &&
+          Object.hasOwn(content, "mimeType") &&
+          (typeof mime === "string" || mime === null) &&
+          usableScalar(harFacets, pointer)
+        ) {
+          selected.content = { mimeType: mime };
+          selectedPointers.add(pointer);
+        }
+      }
+      reported[key] = selected;
     }
   }
   const { protobuf: _protobuf, ...sourceRecord } = record;
@@ -569,6 +598,20 @@ export const projectWebNetworkCaptureView = (
         })
       : projected;
   }
+  if (
+    view.include_response_content_type === true &&
+    (report.format !== "har" || view.detail !== "preview")
+  )
+    return err(
+      analysisViewInputError([
+        {
+          path: ["view", "include_response_content_type"],
+          reason: "invalid_value",
+          message:
+            "Recorded response content type selection requires a HAR capture preview; complete pages already retain all reported fields.",
+        },
+      ]),
+    );
   const records = report.records.slice(view.offset, view.offset + view.limit);
   return ok({
     kind: "capture",
@@ -577,7 +620,13 @@ export const projectWebNetworkCaptureView = (
     items: captureViewItemsSchema.parse(
       view.detail === "complete"
         ? records
-        : records.map((record) => preview(record, report.format)),
+        : records.map((record) =>
+            preview(
+              record,
+              report.format,
+              view.include_response_content_type === true,
+            ),
+          ),
     ),
     coverage: pageViewCoverage(
       view.offset,

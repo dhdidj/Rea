@@ -141,7 +141,9 @@ const bytesText = (input: Uint8Array, fixed = false) => {
   const bytes = end < 0 ? input : input.subarray(0, end);
   try {
     return {
-      text: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+        bytes,
+      ),
       bytesHex: null,
     };
   } catch {
@@ -264,7 +266,7 @@ export const projectMachoBinary = (
     const fields: Record<string, string | number | null> = {
       cmd: kind,
       cmdsize: row.size,
-      ...(row.fixedFields ?? {}),
+      ...row.fixedFields,
     };
     let decoded = row.fixedFields !== undefined;
     if (

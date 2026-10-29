@@ -2,7 +2,11 @@ import { expect, it } from "vitest";
 import { projectMachoBinary } from "./MachoBinaryProjection.js";
 import type { MachoCommandNames } from "./MachoCommandNames.js";
 import { readMachoCommandNames } from "./MachoCommandNames.js";
-import { machoImage, readerOf, segmentCommand } from "../artifacts/apple/MachoImage.fixture.js";
+import {
+  machoImage,
+  readerOf,
+  segmentCommand,
+} from "../artifacts/apple/MachoImage.fixture.js";
 
 const multilineBinary: MachoCommandNames = {
   sliceSize: 4096,
@@ -388,11 +392,42 @@ it("distinguishes exact fixed command extents from unmodeled trailing bytes", as
   ]);
 });
 
+it("preserves leading UTF-8 BOM characters in names and dependency paths", () => {
+  const marker = "\uFEFF";
+  const commands = multilineBinary.commands.map((row) => ({
+    ...row,
+    ...(row.segmentName ? { segmentName: Buffer.from(`${marker}seg\0`) } : {}),
+    ...(row.sections
+      ? {
+          sections: row.sections.map((section) => ({
+            ...section,
+            name: Buffer.from(`${marker}name\0`),
+            segmentName: Buffer.from(`${marker}seg\0`),
+          })),
+        }
+      : {}),
+    ...(row.commandString
+      ? { commandString: Buffer.from(`${marker}lib.dylib`) }
+      : {}),
+  }));
+  const result = projectMachoBinary({ ...multilineBinary, commands });
+  expect(result.segments[0]).toMatchObject({
+    name: `${marker}seg`,
+    sections: [{ name: `${marker}name`, segment: `${marker}seg` }],
+  });
+  expect(result.dependencies[0]).toMatchObject({ path: `${marker}lib.dylib` });
+});
+
 it("retains fixed-name storage bytes for a fully decoded segment", async () => {
   const segment = segmentCommand({ name: "__TEXT", vmaddr: 0n, vmsize: 0n });
   segment[15] = 0xff;
   const image = machoImage({ commands: [segment] });
-  const binary = await readMachoCommandNames(readerOf(image), image.length, 1024, 8);
+  const binary = await readMachoCommandNames(
+    readerOf(image),
+    image.length,
+    1024,
+    8,
+  );
   const projection = projectMachoBinary(binary);
   expect(binary.commands[0]?.fullyDecoded).toBe(true);
   expect(projection.commands[0]?.fields.segname).toBe("__TEXT");

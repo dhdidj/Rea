@@ -7,9 +7,14 @@ import {
 } from "./javascriptAstValues.js";
 import {
   isUnshadowedGlobal,
+  resolveSemanticBindingState,
   type JavaScriptSemanticAnalysisState,
 } from "./javascriptSemanticState.js";
 import { semanticArrayIndex } from "./javascriptSemanticPropertyPaths.js";
+import {
+  childNodes,
+  javaScriptAstChildKeys,
+} from "./javascriptSemanticTraversal.js";
 
 type ViteHelper =
   | t.ArrowFunctionExpression
@@ -134,10 +139,64 @@ export const readJavaScriptViteHelper = (
     cacheReads: [cache.left, cache.right.left],
     uncertain:
       defaults.uncertain ||
+      tableMayAffectIndexes(
+        cache.right.right,
+        helper,
+        defaults.indexes,
+        state,
+      ) ||
       state.ambientWrites.covers(["global", "Array", "prototype", "map"]) ||
       state.ambientWrites.covers(["global", "Function", "prototype", "f"]) ||
       state.ambientWrites.covers(["global", "Object", "prototype", "f"]),
   };
+};
+
+/** Table initializers run before projection and may change or expose its input. */
+const tableMayAffectIndexes = (
+  table: t.ArrayExpression,
+  helper: ViteHelper,
+  indexes: string,
+  state: JavaScriptSemanticAnalysisState,
+): boolean => {
+  const parameter = helper.params[0];
+  if (!t.isIdentifier(parameter)) return true;
+  const binding = resolveSemanticBindingState(state, parameter, indexes);
+  if (binding === undefined) return true;
+  let examined = 0;
+  for (const element of table.elements) {
+    if (element === null || readExactJavaScriptLiteral(element).found) continue;
+    const pending: t.Node[] = [element];
+    while (pending.length > 0) {
+      if (++examined > 1024) return true;
+      const node = pending.pop();
+      if (node === undefined) continue;
+      if (
+        t.isCallExpression(node) &&
+        t.isIdentifier(node.callee, { name: "eval" })
+      )
+        return true;
+      if (t.isIdentifier(node)) {
+        // In lowered non-strict functions arguments[0] aliases the parameter;
+        // passing either value away also permits mutation before projection.
+        if (node.name === "arguments") return true;
+        if (node.name === indexes) {
+          const referenced = resolveSemanticBindingState(state, node, indexes);
+          if (
+            referenced === undefined ||
+            referenced.bindingId === binding.bindingId
+          )
+            return true;
+        }
+      }
+      // Avoid expanding a wide nested expression before enforcing the bound.
+      for (const key of javaScriptAstChildKeys(node)) {
+        const value: unknown = Reflect.get(node, key);
+        if (Array.isArray(value) && value.length > 1024 - examined) return true;
+      }
+      for (const child of childNodes(node)) pending.push(child);
+    }
+  }
+  return false;
 };
 
 const viteHelperDeclaration = (

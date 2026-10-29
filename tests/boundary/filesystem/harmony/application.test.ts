@@ -559,6 +559,11 @@ describe("HarmonyOS manifest path rules", () => {
     );
     expect(projection.packaging_model).toBe("unknown");
     expect(projection.components.manifests).toEqual([]);
+    // Exact-case names only, so these members belong to no category and are
+    // disclosed as unclassified rather than silently dropped.
+    expect(
+      projection.unclassified_components.map(({ path }) => path).sort(),
+    ).toEqual(["CONFIG.JSON", "MODULE.JSON", "PACK.INFO"]);
   });
 
   it.each([

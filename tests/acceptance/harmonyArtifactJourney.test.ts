@@ -69,7 +69,7 @@ const harmonyFixture = async () => {
   return { bytes: await writer.close(), javascriptPaths };
 };
 
-/** Assert the projected Harmony graph for one archive format through both adapters. */
+/** Assert the projected Harmony graph for one archive format over the MCP adapter. */
 const expectHarmonyProjection = (
   graph: HarmonyApplicationProjectionResult,
   format: string,

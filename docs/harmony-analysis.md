@@ -57,12 +57,16 @@ being classified as code files. Ark and JavaScript runtime hints summarize the
 classified bytecode and JavaScript lists; supported source extensions share the
 same classification rule as their component rows.
 
-`unclassified_components` preserves files such as `pkgContextInfo.json` and
-`.pages.info` without interpreting their contents. Different paths sharing the
-same bytes remain separate entries. App Pack children are already reported in
-`app_pack_children`, so they are not repeated as unclassified files.
-Unreadable or encrypted content remains in `unavailable_components` with
-unknown identity instead.
+`unclassified_components` preserves files such as `pkgContextInfo.json`,
+`.pages.info`, a HarmonyOS `.har` shared library, and a non-certificate
+`META-INF` entry without interpreting their contents. The `.har` suffix also
+names HTTP Archive JSON, so identifying one needs verified ZIP bytes rather than
+a path rule. Different paths sharing the same bytes remain separate entries. App
+Pack children of an App Pack root are already reported in `app_pack_children`,
+so they are not repeated as unclassified files; a nested `.hap` or `.hsp` member
+of a HAP or HSP root is disclosed there instead, because child-package
+inventory is not recursive. Unreadable or encrypted content remains in
+`unavailable_components` with unknown identity instead.
 
 `coverage.status: "complete-within-inventory"` describes the authenticated
 source inventory and bounded bridge projection, not semantic understanding of

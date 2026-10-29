@@ -94,3 +94,106 @@ describe("findMcpAddMissingValue", () => {
     ).toBeUndefined();
   });
 });
+
+describe("findMcpAddMissingValue with global flags and empty values", () => {
+  it("rejects a valued option after leading global output flags", () => {
+    expect(
+      findMcpAddMissingValue(["--full-output", "mcp", "add", "--agent"]),
+    ).toBe("--agent");
+    expect(findMcpAddMissingValue(["--json", "mcp", "add", "--command"])).toBe(
+      "--command",
+    );
+    expect(findMcpAddMissingValue(["--token-count", "mcp", "add", "-c"])).toBe(
+      "-c",
+    );
+    expect(findMcpAddMissingValue(["--timings", "mcp", "add", "--agent"])).toBe(
+      "--agent",
+    );
+    expect(
+      findMcpAddMissingValue(["--format", "json", "mcp", "add", "--agent"]),
+    ).toBe("--agent");
+    expect(
+      findMcpAddMissingValue(["--format=json", "mcp", "add", "--agent"]),
+    ).toBe("--agent");
+  });
+
+  it("rejects a valued option with global flags between mcp and add", () => {
+    expect(
+      findMcpAddMissingValue(["mcp", "--full-output", "add", "--agent"]),
+    ).toBe("--agent");
+    expect(findMcpAddMissingValue(["mcp", "--json", "add", "--command"])).toBe(
+      "--command",
+    );
+    expect(findMcpAddMissingValue(["mcp", "--token-count", "add", "-c"])).toBe(
+      "-c",
+    );
+  });
+
+  it("rejects an empty string value", () => {
+    expect(findMcpAddMissingValue(["mcp", "add", "--agent", ""])).toBe(
+      "--agent",
+    );
+    expect(findMcpAddMissingValue(["mcp", "add", "--command", ""])).toBe(
+      "--command",
+    );
+    expect(findMcpAddMissingValue(["mcp", "add", "-c", ""])).toBe("-c");
+    expect(
+      findMcpAddMissingValue(["--full-output", "mcp", "add", "--agent", ""]),
+    ).toBe("--agent");
+  });
+
+  it("rejects an option swallowed by another option", () => {
+    expect(
+      findMcpAddMissingValue(["mcp", "add", "--command", "--agent", "amp"]),
+    ).toBe("--command");
+    expect(
+      findMcpAddMissingValue(["mcp", "add", "--agent", "--command", "x"]),
+    ).toBe("--agent");
+  });
+
+  it("leaves mode flags ahead of the command alone", () => {
+    expect(
+      findMcpAddMissingValue(["--mcp", "mcp", "add", "--agent"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["mcp", "--mcp", "add", "--agent"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["--llms", "mcp", "add", "--agent"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["mcp", "--llms", "add", "--agent"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["--llms-full", "mcp", "add", "--agent"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["--schema", "mcp", "add", "--agent"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["--update", "mcp", "add", "--agent"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["--incur-update-check", "mcp", "add", "--agent"]),
+    ).toBeUndefined();
+  });
+
+  it("still accepts valid values with global output flags", () => {
+    expect(
+      findMcpAddMissingValue(["--full-output", "mcp", "add", "--agent", "amp"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue(["mcp", "add", "--agent", "amp", "--full-output"]),
+    ).toBeUndefined();
+    expect(
+      findMcpAddMissingValue([
+        "--format",
+        "json",
+        "mcp",
+        "add",
+        "--agent",
+        "amp",
+      ]),
+    ).toBeUndefined();
+  });
+});

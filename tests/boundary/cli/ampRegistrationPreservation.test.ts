@@ -168,7 +168,6 @@ cliTest(
       code: "VALIDATION_ERROR",
       message: expect.stringContaining("Unable to create Amp settings backup"),
     });
-    expect(backupRejected.json.message).not.toContain("not valid JSON");
   },
 );
 

@@ -178,10 +178,10 @@ it("keeps the first Amp registration backup and secures later recovery copies", 
     '{"amp.mcpServers":{"rea":{"env":{"TOKEN":"secret"}}}}\n';
   await writeFile(settingsPath, settingsText);
 
-  const backupPath = await writeAmpRegistrationBackup(
-    settingsPath,
-    settingsText,
-  );
+  const backup = await writeAmpRegistrationBackup(settingsPath, settingsText);
+  expect(backup.ok).toBe(true);
+  if (!backup.ok) throw new Error(backup.error.detail);
+  const backupPath = backup.value;
   expect(await readFile(backupPath, "utf8")).toBe(settingsText);
   if (process.platform !== "win32")
     expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
@@ -189,10 +189,13 @@ it("keeps the first Amp registration backup and secures later recovery copies", 
   await chmod(backupPath, 0o644);
   const updatedSettings = "updated settings";
   await writeFile(settingsPath, updatedSettings);
-  const updatedBackupPath = await writeAmpRegistrationBackup(
+  const updatedBackup = await writeAmpRegistrationBackup(
     settingsPath,
     updatedSettings,
   );
+  expect(updatedBackup.ok).toBe(true);
+  if (!updatedBackup.ok) throw new Error(updatedBackup.error.detail);
+  const updatedBackupPath = updatedBackup.value;
   expect(updatedBackupPath).not.toBe(backupPath);
   expect(await readFile(updatedBackupPath, "utf8")).toBe(updatedSettings);
   expect(await readFile(backupPath, "utf8")).toBe(settingsText);
@@ -200,4 +203,21 @@ it("keeps the first Amp registration backup and secures later recovery copies", 
     expect((await stat(updatedBackupPath)).mode & 0o777).toBe(0o600);
   if (process.platform !== "win32")
     expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
+});
+
+it("returns a tagged failure when the Amp backup path is occupied", async () => {
+  const root = await createTestTempDirectory("rea-amp-backup-occupied-");
+  const settingsPath = join(root, "settings.json");
+  const backupPath = `${settingsPath}.rea.backup`;
+  await writeFile(settingsPath, "{}\n");
+  await mkdir(backupPath);
+
+  const result = await writeAmpRegistrationBackup(settingsPath, "{}\n");
+  expect(result).toMatchObject({
+    ok: false,
+    error: {
+      kind: "occupied",
+      path: backupPath,
+    },
+  });
 });

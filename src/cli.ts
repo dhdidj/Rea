@@ -457,13 +457,15 @@ export const createCli = (
 
         if (settingsText === undefined) return runRegistration();
         return writeAmpRegistrationBackup(settingsPath, settingsText).then(
-          (backupPath) => runRegistration(backupPath),
-          (cause: unknown) => {
-            reportValidationError(
-              `Unable to create Amp settings backup: ${
-                cause instanceof Error ? cause.message : String(cause)
-              }`,
-            );
+          (backup) => {
+            if (!backup.ok) {
+              const { kind, path, detail } = backup.error;
+              reportValidationError(
+                `Unable to create Amp settings backup (${kind}) at ${path}: ${detail}`,
+              );
+              return;
+            }
+            return runRegistration(backup.value);
           },
         );
       }

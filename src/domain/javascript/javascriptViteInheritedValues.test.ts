@@ -39,6 +39,11 @@ describe("Vite inherited dependency values", () => {
     ).toEqual([null, null]);
     expect(
       candidates(
+        `const proto = flag ? Array.prototype : external; const copy={...proto}; opaque(copy); __vite__mapDeps([0]);`,
+      ),
+    ).toEqual([null]);
+    expect(
+      candidates(
         init +
           `opaque(proto); const copy={...proto}; opaque(copy); __vite__mapDeps([0]);`,
       ),

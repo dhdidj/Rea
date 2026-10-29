@@ -12,8 +12,14 @@ import {
   type JavaScriptSemanticBindingState,
 } from "./javascriptSemanticState.js";
 import { semanticArrayIndex } from "./javascriptSemanticPropertyPaths.js";
-import { semanticReadPrecedesWrite } from "./javascriptSemanticMutationInitializers.js";
+import {
+  semanticEffectStatementPosition,
+  semanticReadStatementPosition,
+  semanticStatementPositionPrecedes,
+  type StatementPosition,
+} from "./javascriptSemanticMutationInitializers.js";
 import { semanticLoopValueSource } from "./javascriptSemanticIterationSources.js";
+import { isUnmodifiedGlobalReference } from "./javascriptSemanticAmbientWrites.js";
 import type { JavaScriptIntrinsicInvocation } from "./javascriptElectronMemberWrites.js";
 import {
   hasJavaScriptViteInheritedProperty,
@@ -109,13 +115,18 @@ const joinIdentity = (
     right.childrenIntrinsicPrototype === true
       ? true
       : undefined;
+  const exactPrototype =
+    left.exactPrototype === true && right.exactPrototype === true
+      ? true
+      : undefined;
   return allocation === left.allocation &&
     owner === left.owner &&
     children === left.children &&
     inheritedArrayPrototype === left.inheritedArrayPrototype &&
     intrinsicPrototype === left.intrinsicPrototype &&
     childrenInheritedArrayPrototype === left.childrenInheritedArrayPrototype &&
-    childrenIntrinsicPrototype === left.childrenIntrinsicPrototype
+    childrenIntrinsicPrototype === left.childrenIntrinsicPrototype &&
+    exactPrototype === left.exactPrototype
     ? left
     : {
         allocation,
@@ -131,6 +142,7 @@ const joinIdentity = (
         ...(childrenIntrinsicPrototype === true
           ? { childrenIntrinsicPrototype }
           : {}),
+        ...(exactPrototype === true ? { exactPrototype } : {}),
       };
 };
 
@@ -178,6 +190,14 @@ export class ViteCacheIdentities {
   private unknownInheritedRead: boolean | undefined;
   private readonly copyMutationHazards = new Map<t.Node | undefined, Vertex>();
   private readonly copyEffects: { node: t.Node; source: Vertex }[] = [];
+  private copyEffectIndex?: {
+    readonly size: number;
+    readonly tree: readonly (Vertex | undefined)[];
+    readonly groups: Map<
+      readonly t.Statement[],
+      { start: number; end: number; positions: readonly StatementPosition[] }
+    >;
+  };
   constructor(
     private readonly state: JavaScriptSemanticAnalysisState,
     private readonly invocation: (
@@ -835,9 +855,10 @@ export class ViteCacheIdentities {
       }
       inherited =
         source.childrenInheritedArrayPrototype === true ||
-        (inherited && unsafe);
+        (inherited && (unsafe || source.exactPrototype !== true));
       intrinsic =
-        source.childrenIntrinsicPrototype === true || (intrinsic && unsafe);
+        source.childrenIntrinsicPrototype === true ||
+        (intrinsic && (unsafe || source.exactPrototype !== true));
     }
     return {
       allocation: vertex.seed?.allocation ?? null,
@@ -864,16 +885,119 @@ export class ViteCacheIdentities {
     if (previous !== undefined) return previous;
     const hazard = this.vertex({});
     this.copyMutationHazards.set(read, hazard);
+    const index = yield* this.copyEffectIndexSteps();
+    const addRange = (start: number, end: number): void => {
+      for (
+        let left = start + index.size, right = end + index.size;
+        left < right;
+        left >>= 1, right >>= 1
+      ) {
+        if (left & 1) {
+          const node = index.tree[left++];
+          if (node !== undefined)
+            this.connect(hazard, { kind: "family", source: node });
+        }
+        if (right & 1) {
+          const node = index.tree[--right];
+          if (node !== undefined)
+            this.connect(hazard, { kind: "family", source: node });
+        }
+      }
+    };
+    const position =
+      read === undefined
+        ? null
+        : semanticReadStatementPosition(read, this.state.parentsByNode);
+    const group =
+      position === null ? undefined : index.groups.get(position.body);
+    if (position === null || group === undefined)
+      addRange(0, this.copyEffects.length);
+    else {
+      let left = 0;
+      let right = group.positions.length;
+      while (left < right) {
+        const middle = (left + right) >>> 1;
+        const effectPosition = group.positions[middle];
+        if (
+          effectPosition !== undefined &&
+          !semanticStatementPositionPrecedes(position, effectPosition)
+        )
+          left = middle + 1;
+        else right = middle;
+      }
+      addRange(0, group.start + left);
+      addRange(group.end, this.copyEffects.length);
+    }
+    return hazard;
+  }
+
+  /** Share effect families across copy positions without quadratic edges. */
+  private *copyEffectIndexSteps(): Generator<
+    void,
+    NonNullable<typeof this.copyEffectIndex>
+  > {
+    if (this.copyEffectIndex !== undefined) return this.copyEffectIndex;
+    type Entry = { source: Vertex; position: StatementPosition | null };
+    const grouped = new Map<readonly t.Statement[] | null, Entry[]>();
     let examined = 0;
     for (const effect of this.copyEffects) {
       if (examined++ % 1024 === 0) yield;
-      if (
-        read === undefined ||
-        !semanticReadPrecedesWrite(read, effect.node, this.state.parentsByNode)
-      )
-        this.connect(hazard, { kind: "family", source: effect.source });
+      const position = semanticEffectStatementPosition(
+        effect.node,
+        this.state.parentsByNode,
+      );
+      const key = position?.body ?? null;
+      const entries = grouped.get(key) ?? [];
+      if (!grouped.has(key)) grouped.set(key, entries);
+      entries.push({ source: effect.source, position });
     }
-    return hazard;
+    const entries: Entry[] = [];
+    const groups = new Map<
+      readonly t.Statement[],
+      { start: number; end: number; positions: StatementPosition[] }
+    >();
+    for (const [body, values] of grouped) {
+      if (body !== null)
+        values.sort(
+          (a, b) =>
+            a.position!.index - b.position!.index ||
+            a.position!.declaratorIndex - b.position!.declaratorIndex,
+        );
+      const start = entries.length;
+      for (const value of values) {
+        if (examined++ % 1024 === 0) yield;
+        entries.push(value);
+      }
+      if (body !== null)
+        groups.set(body, {
+          start,
+          end: entries.length,
+          positions: values.map((value) => value.position!),
+        });
+    }
+    let size = 1;
+    while (size < entries.length) size *= 2;
+    const tree: (Vertex | undefined)[] = new Array(size * 2);
+    for (let i = 0; i < entries.length; i++) {
+      if (examined++ % 1024 === 0) yield;
+      tree[size + i] = entries[i]?.source;
+    }
+    for (let i = size - 1; i > 0; i--) {
+      if (examined++ % 1024 === 0) yield;
+      const left = tree[i * 2];
+      const right = tree[i * 2 + 1];
+      if (left === undefined) tree[i] = right;
+      else if (right === undefined) tree[i] = left;
+      else {
+        const family = this.vertex({});
+        this.connect(family, { kind: "family", source: left });
+        this.connect(family, { kind: "family", source: right });
+        tree[i] = family;
+      }
+    }
+    const result = { size, tree, groups };
+    this.copyEffectIndex = result;
+    return result;
   }
 
   private *helperResultSteps(
@@ -1182,10 +1306,23 @@ export class ViteCacheIdentities {
             "",
         );
       if (globalConstructor || globalMember) {
+        const name = t.isIdentifier(expression)
+          ? expression.name
+          : t.isMemberExpression(expression) ||
+              t.isOptionalMemberExpression(expression)
+            ? semanticStaticPropertyKey(
+                expression.property,
+                expression.computed,
+              )
+            : null;
         vertex.seed = {
           allocation: null,
           owner: undefined,
           intrinsicPrototype: true,
+          ...(name !== null &&
+          isUnmodifiedGlobalReference(expression, this.state, name)
+            ? { exactPrototype: true as const }
+            : {}),
         };
         this.enqueue(vertex);
         continue;
@@ -1409,6 +1546,9 @@ export class ViteCacheIdentities {
         ...(source.intrinsicPrototype === true
           ? { intrinsicPrototype: true as const }
           : {}),
+        ...(source.exactPrototype === true && input.key === "prototype"
+          ? { exactPrototype: true as const }
+          : {}),
       };
     if (
       input.key === "__proto__" &&
@@ -1420,6 +1560,14 @@ export class ViteCacheIdentities {
         allocation: null,
         owner: undefined,
         inheritedArrayPrototype: true,
+        ...(!hasJavaScriptViteInheritedProperty("__proto__", this.state) &&
+        !(yield* this.properties.prototypeChangedSteps(
+          allocation,
+          input.read,
+          target,
+        ))
+          ? { exactPrototype: true as const }
+          : {}),
       };
     if (input.key === "__proto__" && allocation.kind === "helper")
       return { allocation: null, owner: null };
@@ -1479,6 +1627,9 @@ export class ViteCacheIdentities {
           ...(fact.intrinsicPrototype === true ||
           source.intrinsicPrototype === true
             ? { intrinsicPrototype: true as const }
+            : {}),
+          ...(fact.exactPrototype === true
+            ? { exactPrototype: true as const }
             : {}),
         }
       : fact;

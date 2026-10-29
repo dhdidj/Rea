@@ -18,7 +18,7 @@ import type {
   JavaScriptSemanticEffectTiming,
 } from "./javascriptSemanticState.js";
 
-interface StatementPosition {
+export interface StatementPosition {
   readonly body: readonly t.Statement[];
   readonly index: number;
   readonly declaratorIndex: number;
@@ -1238,4 +1238,17 @@ export const semanticReadPrecedesWrite = (
     right !== null &&
     positionPrecedes(left.position, right)
   );
+};
+
+/** Shared ordering coordinates for indexing multiple effect queries. */
+export const semanticEffectStatementPosition = directMutationPosition;
+export const semanticStatementPositionPrecedes = positionPrecedes;
+
+/** A repeating or unpositioned read cannot exclude any later effect. */
+export const semanticReadStatementPosition = (
+  read: t.Node,
+  parents: WeakMap<t.Node, t.Node>,
+): StatementPosition | null => {
+  const result = bindingReadPosition(read, parents);
+  return result.repeatingLoop === undefined ? result.position : null;
 };

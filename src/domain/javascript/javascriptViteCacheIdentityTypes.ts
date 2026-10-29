@@ -38,6 +38,8 @@ export interface ViteCacheIdentity {
   /** Intrinsic value that becomes exposed if selected by the helper. */
   readonly intrinsicPrototype?: true;
   readonly childrenIntrinsicPrototype?: true;
+  /** This value is proven to be the shared intrinsic itself. */
+  readonly exactPrototype?: true;
 }
 
 export interface Vertex {
